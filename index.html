@@ -1,0 +1,1487 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Strom v misce</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Relaxační hra: tvaruj bonsaj stříháním větví ve stylu japonského dřevořezu.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif:wght@400;600;800&family=Shippori+Mincho:wght@600;800&family=Instrument+Sans:wght@400;600&display=swap">
+<style>
+/* Layout: obraz jako japonský dřevořez přes celou plochu (canvas). Svislá kartuše vlevo nahoře, údaje o stromu
+   vpravo nahoře, nastavení schované pod ikonou vpravo dole. Záměrně jediný vzhled (papír a tuš). */
+:root{
+  --paper:#ebe7dc;
+  --paper-hi:#f5f2ea;
+  --ink:#25221f;
+  --ink-soft:#5b554d;
+  --indigo:#2b4a7c;
+  --vermilion:#c4442b;
+  --line-soft:rgba(37,34,31,.22);
+  --font-display:"Noto Serif","Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",Georgia,"Times New Roman",serif;
+  --font-ui:"Instrument Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color-scheme:light;
+}
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;overflow:hidden}
+body{background:var(--paper);color:var(--ink);font-family:var(--font-ui);-webkit-font-smoothing:antialiased;line-height:1.45}
+canvas#scene{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:none;outline:none}
+body.panel-open canvas#scene{cursor:default}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--vermilion);outline-offset:2px}
+
+.cartouche{
+  position:fixed;z-index:2;
+  top:calc(env(safe-area-inset-top,0px) + 16px);
+  left:max(16px, env(safe-area-inset-left,0px));
+  display:flex;flex-direction:column;align-items:center;gap:10px;pointer-events:none;
+}
+.cartouche .frame{
+  writing-mode:vertical-rl;background:var(--paper-hi);
+  border:1.5px solid var(--ink);outline:1px solid var(--ink);outline-offset:3px;
+  padding:14px 8px;display:flex;gap:6px;align-items:center;
+}
+.cartouche h1{margin:0;font-family:var(--font-display);font-weight:800;font-size:clamp(22px,2.6vw,28px);letter-spacing:.08em;line-height:1}
+.cartouche .sub{font-family:var(--font-display);font-size:12px;letter-spacing:.14em;color:var(--ink-soft)}
+.seal{
+  font-family:"Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif !important;
+  width:34px;height:64px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  background:var(--vermilion);color:#f7efe6;font-family:var(--font-display);font-weight:800;font-size:18px;line-height:1;
+  border-radius:3px;box-shadow:inset 0 0 0 2px rgba(247,239,230,.35);transform:rotate(-2deg);
+}
+.seal span{display:block}
+
+.meta{
+  position:fixed;z-index:2;top:calc(env(safe-area-inset-top,0px) + 18px);
+  right:max(16px, env(safe-area-inset-right,0px));
+  display:grid;gap:8px;justify-items:end;text-align:right;pointer-events:none;
+  background:var(--paper-hi);border:1.5px solid var(--ink);border-radius:2px;padding:10px 12px;
+  box-shadow:3px 3px 0 rgba(37,34,31,.16);
+}
+.meta .k{display:block;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft)}
+.meta .v{display:block;font-family:var(--font-display);font-weight:600;font-size:20px;line-height:1.15;font-variant-numeric:tabular-nums}
+
+#hint{
+  position:fixed;z-index:2;margin:0;pointer-events:none;
+  bottom:calc(env(safe-area-inset-bottom,0px) + 22px);left:50%;transform:translateX(-50%);
+  width:max-content;max-width:min(52ch, calc(100% - 160px));
+  font-size:13.5px;text-align:center;text-wrap:balance;color:var(--ink);
+  background:rgba(245,242,234,.85);border:1px solid var(--line-soft);padding:4px 11px;border-radius:2px;
+  transition:opacity .6s;
+}
+#hint.dim{opacity:.0}
+
+.gear{
+  position:fixed;z-index:4;
+  right:max(16px, env(safe-area-inset-right,0px));
+  bottom:calc(env(safe-area-inset-bottom,0px) + 16px);
+  width:52px;height:52px;display:grid;place-items:center;cursor:pointer;
+  background:var(--paper-hi);border:1.5px solid var(--ink);border-radius:3px;
+  box-shadow:3px 3px 0 rgba(37,34,31,.2);transition:transform .15s;
+}
+.gear:hover{transform:translate(-1px,-1px);box-shadow:4px 4px 0 rgba(37,34,31,.22)}
+.gear svg{width:24px;height:24px;transition:transform .5s ease}
+.gear[aria-expanded="true"]{background:var(--ink);color:var(--paper-hi)}
+.gear[aria-expanded="true"] svg{transform:rotate(60deg)}
+
+.panel{
+  position:fixed;z-index:4;
+  right:max(16px, env(safe-area-inset-right,0px));
+  bottom:calc(env(safe-area-inset-bottom,0px) + 80px);
+  width:min(384px, calc(100vw - 32px));
+  max-height:calc(100% - 110px - env(safe-area-inset-bottom,0px) - env(safe-area-inset-top,0px));
+  overflow-y:auto;overscroll-behavior:contain;
+  background:var(--paper-hi);border:1.5px solid var(--ink);outline:1px solid var(--ink);outline-offset:-7px;
+  box-shadow:6px 6px 0 rgba(37,34,31,.2);padding:20px 20px 18px;
+  display:grid;gap:16px;
+  animation:pin .22s ease-out;
+}
+@keyframes pin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.panel header{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.panel h2{margin:0;font-family:var(--font-display);font-weight:800;font-size:24px;line-height:1}
+.x{appearance:none;border:1.5px solid var(--ink);background:transparent;width:32px;height:32px;border-radius:2px;cursor:pointer;font-size:18px;line-height:1;display:grid;place-items:center}
+.x:hover{background:rgba(37,34,31,.07)}
+.sec{display:grid;gap:8px}
+.sec h3{margin:0;font-size:11px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-soft)}
+.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.tiles.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.tiles.two svg{aspect-ratio:5/2.2}
+.tile{
+  appearance:none;cursor:pointer;text-align:left;min-width:0;
+  display:grid;gap:5px;padding:5px 5px 7px;border-radius:3px;
+  background:var(--paper);border:1.5px solid var(--line-soft);
+}
+.tile:hover{border-color:rgba(37,34,31,.5)}
+.tile[aria-checked="true"]{border-color:var(--ink);background:#fff;box-shadow:inset 0 -3px 0 var(--indigo)}
+.tile svg{display:block;width:100%;height:auto;aspect-ratio:5/3;max-width:100%;border:1px solid rgba(37,34,31,.35);border-radius:2px}
+.tile .t{font-size:13px;font-weight:600;line-height:1.2;padding:0 2px}
+.tile .l{font-size:11px;color:var(--ink-soft);line-height:1.2;padding:0 2px;margin-top:-3px}
+.seg{display:flex;flex-wrap:wrap;gap:4px}
+.chip{
+  appearance:none;border:1.5px solid var(--line-soft);background:var(--paper);color:var(--ink);
+  font-size:13px;font-weight:600;padding:6px 11px;border-radius:2px;cursor:pointer;white-space:nowrap;
+}
+.chip:hover{border-color:rgba(37,34,31,.5)}
+.chip[aria-checked="true"],.chip[aria-pressed="true"]{background:var(--indigo);border-color:var(--indigo);color:var(--paper-hi)}
+.soundrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.vol{display:flex;align-items:center;gap:8px;color:var(--ink-soft);flex:1;min-width:140px}
+.vol svg{width:16px;height:16px;flex-shrink:0}
+.vol input{flex:1;min-width:0;accent-color:var(--indigo)}
+.btn{
+  appearance:none;border:1.5px solid var(--ink);background:var(--paper-hi);color:var(--ink);
+  font-size:14px;font-weight:600;padding:9px 16px;border-radius:2px;cursor:pointer;white-space:nowrap;
+}
+.btn.primary{background:var(--ink);color:var(--paper-hi)}
+.btn.primary:hover{background:#3a3631}
+.btn.wide{width:100%}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+#intro{
+  position:fixed;inset:0;z-index:6;display:grid;place-items:center;
+  padding-left:max(16px, env(safe-area-inset-left,0px));padding-right:max(16px, env(safe-area-inset-right,0px));
+  padding-block:24px;background:rgba(37,34,31,.18);transition:opacity .6s ease;
+}
+#intro.out{opacity:0;pointer-events:none}
+.card{
+  position:relative;width:100%;max-width:640px;display:grid;grid-template-columns:auto 1fr;gap:26px;
+  background:linear-gradient(180deg, rgba(43,74,124,.9) 0, rgba(43,74,124,.55) 34px, rgba(43,74,124,.12) 92px, rgba(43,74,124,0) 130px), var(--paper-hi);
+  border:1.5px solid var(--ink);outline:1px solid var(--ink);outline-offset:-9px;
+  padding:30px 30px 26px 26px;box-shadow:8px 8px 0 rgba(37,34,31,.22);
+}
+.card::after{content:"";position:absolute;left:18px;right:18px;bottom:18px;height:1px;background:var(--line-soft);pointer-events:none;display:none}
+.title-col{display:flex;flex-direction:column;align-items:center;gap:12px;padding-top:4px}
+.title-col .vt{
+  writing-mode:vertical-rl;background:var(--paper-hi);border:1.5px solid var(--ink);outline:1px solid var(--ink);outline-offset:3px;
+  padding:16px 9px;display:flex;align-items:center;gap:8px;
+}
+.title-col h2{margin:0;font-family:var(--font-display);font-weight:800;font-size:34px;line-height:1;letter-spacing:.1em}
+.title-col .sub{font-family:var(--font-display);font-size:12px;letter-spacing:.16em;color:var(--ink-soft)}
+.body-col{min-width:0;display:flex;flex-direction:column;gap:16px;padding-top:44px}
+.lead{margin:0;font-family:var(--font-display);font-weight:600;font-size:19px;line-height:1.45;max-width:34ch;text-wrap:pretty}
+.steps{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.steps li{display:grid;gap:6px;align-content:start;min-width:0}
+.steps svg{display:block;width:100%;height:auto;aspect-ratio:4/3;max-width:100%;border:1.5px solid var(--ink);background:var(--paper)}
+.steps b{font-family:var(--font-display);font-weight:800;font-size:15px;line-height:1.2}
+.steps span{font-size:12.5px;color:var(--ink-soft);line-height:1.35}
+.keys{margin:0;font-size:12px;color:var(--ink-soft)}
+kbd{font-family:var(--font-ui);font-size:11px;font-weight:600;padding:1px 6px;border:1px solid var(--ink-soft);border-radius:2px;background:var(--paper)}
+.actions{display:flex;flex-wrap:wrap;gap:10px}
+.actions .btn{padding:10px 18px;font-size:14.5px}
+
+@media (max-width:560px){
+  .meta{grid-template-columns:repeat(3,auto);gap:6px 14px;padding:8px 10px}
+  .meta .v{font-size:16px}
+  .meta .k{font-size:9.5px}
+  #hint{font-size:12.5px;max-width:calc(100% - 100px);left:16px;transform:none;text-align:left}
+  .card{gap:16px;padding:24px 20px 22px 18px}
+  .title-col h2{font-size:26px}
+  .body-col{padding-top:34px;gap:14px}
+  .lead{font-size:16.5px}
+  .steps{grid-template-columns:1fr;gap:8px}
+  .steps li{grid-template-columns:76px 1fr;column-gap:10px;row-gap:0;align-items:center}
+  .steps li svg{grid-row:span 2}
+  .steps b{align-self:end}
+  .steps span{align-self:start}
+  .panel{padding:18px 16px 16px}
+}
+@media (prefers-reduced-motion: reduce){ #intro,#hint{transition:none} .panel{animation:none} .gear svg{transition:none} }
+</style>
+</head>
+<body>
+
+<canvas id="scene" role="img" aria-label="Bonsaj v mělké misce na dřevěném stolku ve stylu japonského dřevořezu."></canvas>
+
+<div class="cartouche">
+  <div class="frame"><h1>Strom v misce</h1><span class="sub">Codeweek 2026</span></div>
+  <div class="seal" aria-hidden="true"><span>盆</span><span>栽</span></div>
+</div>
+
+<aside class="meta" aria-live="polite">
+  <div><span class="k">Strom</span><span class="v" id="speciesName">Borovice</span></div>
+  <div><span class="k">Roční doba</span><span class="v" id="seasonName">Léto</span></div>
+  <div><span class="k">Střihů</span><span class="v" id="cuts">0</span></div>
+</aside>
+
+<p id="hint">Tahem přes větvičku ji odstřihneš, kliknutím na obláček listí ho zastřihneš.</p>
+
+<button class="gear" id="gear" aria-label="Nastavení" aria-expanded="false" aria-controls="panel">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M10.3 2h3.4l.5 2.6c.6.2 1.2.5 1.7.9l2.5-.9 1.7 2.9-2 1.7c.1.6.1 1.3 0 1.9l2 1.7-1.7 2.9-2.5-.9c-.5.4-1.1.7-1.7.9l-.5 2.6h-3.4l-.5-2.6c-.6-.2-1.2-.5-1.7-.9l-2.5.9-1.7-2.9 2-1.7a6 6 0 0 1 0-1.9l-2-1.7 1.7-2.9 2.5.9c.5-.4 1.1-.7 1.7-.9zM12 8.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8z" transform="translate(0 1.3)"/></svg>
+</button>
+
+<section class="panel" id="panel" hidden aria-label="Nastavení">
+  <header><h2>Nastavení</h2><button class="x" id="closePanel" aria-label="Zavřít nastavení">×</button></header>
+
+  <div class="sec">
+    <h3 id="bgLbl">Pozadí</h3>
+    <div class="tiles" role="radiogroup" aria-labelledby="bgLbl">
+      <button class="tile" role="radio" aria-checked="true" data-bg="temple">
+        <svg viewBox="0 0 60 36" aria-hidden="true"><defs><linearGradient id="gT" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2b4c84"/><stop offset=".6" stop-color="#ebe7dc"/></linearGradient></defs><rect width="60" height="36" fill="url(#gT)"/><path d="M0 29q15-5 30-2t30-1v10H0z" fill="#6f9160"/><path d="M14 30V18h2v12zm4-12h2v12h-2" fill="#8a96b0"/><path d="M11 19h12l-1 1.5H12zm3-3h6l1 2h-8z" fill="#7e8aa6"/><path d="M38 31V15h2v16zm10 0V15h2v16z" fill="#c8402a"/><path d="M34 12.5q10 2.2 20 0v2.2q-10 1.8-20 0z" fill="#1f1b18"/><rect x="36" y="15.2" width="16" height="1.6" fill="#c8402a"/><rect x="36.5" y="19" width="15" height="1.5" fill="#c8402a"/></svg>
+        <span class="t">Chrám</span>
+      </button>
+      <button class="tile" role="radio" aria-checked="false" data-bg="city">
+        <svg viewBox="0 0 60 36" aria-hidden="true"><defs><linearGradient id="gC" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0d0820"/><stop offset=".55" stop-color="#3a1460"/><stop offset="1" stop-color="#c2306f"/></linearGradient><linearGradient id="gS" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd23f"/><stop offset="1" stop-color="#ff3ea5"/></linearGradient></defs><rect width="60" height="36" fill="url(#gC)"/><circle cx="20" cy="22" r="9" fill="url(#gS)"/><path d="M10 24h20v1.2H10zm0 3h20v1.4H10z" fill="#3a1460"/><path d="M0 36V20h6v-4h6v20zm40 0V12h7v6h5V9h8v27z" fill="#1b1131"/><rect x="43" y="14" width="2.4" height="12" fill="none" stroke="#29e6ff" stroke-width=".9"/><rect x="54" y="12" width="2.4" height="10" fill="none" stroke="#ff3ea5" stroke-width=".9"/><path d="M0 5q30 7 60 0" stroke="#07040f" stroke-width=".7" fill="none"/></svg>
+        <span class="t">Cyberpunk Tokio</span>
+      </button>
+      <button class="tile" role="radio" aria-checked="false" data-bg="fuji">
+        <svg viewBox="0 0 60 36" aria-hidden="true"><defs><linearGradient id="gF" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2b4c84"/><stop offset=".6" stop-color="#ebe7dc"/></linearGradient></defs><rect width="60" height="36" fill="url(#gF)"/><circle cx="14" cy="12" r="5" fill="#f2e3bd"/><path d="M14 31 33 10h4l19 21z" fill="#6e86ab"/><path d="M33 10h4l4 5-3-1-2 2-2-2-2 1-3 0z" fill="#fafaf8"/><path d="M0 30q15-4 30-1t30-1v8H0z" fill="#6f9160"/><rect x="8" y="22" width="24" height="2.4" rx="1.2" fill="#f2efe7"/></svg>
+        <span class="t">Hora Fudži</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="sec">
+    <h3 id="spLbl">Strom</h3>
+    <div class="tiles two" role="radiogroup" aria-labelledby="spLbl">
+      <button class="tile" role="radio" aria-checked="true" data-species="pine">
+        <svg viewBox="0 0 60 36" aria-hidden="true"><rect width="60" height="36" fill="#ebe7dc"/><path d="M29 33c1-6-3-9 1-15m0 0c4-3 10-3 14-1M30 18c-4-2-9-2-13 0" stroke="#5e4230" stroke-width="2.4" fill="none" stroke-linecap="round"/><g fill="#2f5e35" stroke="#25221f" stroke-width=".8"><ellipse cx="44" cy="15" rx="9" ry="4"/><ellipse cx="16" cy="16" rx="8" ry="3.6"/><ellipse cx="30" cy="9" rx="10" ry="4.4"/></g><g fill="#5f9147"><ellipse cx="44" cy="13.6" rx="5.5" ry="1.8"/><ellipse cx="16" cy="14.8" rx="5" ry="1.6"/><ellipse cx="30" cy="7.4" rx="6" ry="2"/></g></svg>
+        <span class="t">Borovice</span><span class="l">Pinus thunbergii</span>
+      </button>
+      <button class="tile" role="radio" aria-checked="false" data-species="maple">
+        <svg viewBox="0 0 60 36" aria-hidden="true"><rect width="60" height="36" fill="#ebe7dc"/><path d="M30 33c0-6 1-10-1-15m1 3c3-3 7-5 9-9M30 22c-3-3-6-6-8-10" stroke="#7a6a5e" stroke-width="2.2" fill="none" stroke-linecap="round"/><g fill="#a3262a" stroke="#25221f" stroke-width=".8"><circle cx="21" cy="12" r="7"/><circle cx="39" cy="11" r="7.5"/><circle cx="30" cy="8" r="7.5"/><circle cx="30" cy="16" r="6"/></g><g fill="#e2512f"><circle cx="21" cy="10" r="4"/><circle cx="39" cy="9" r="4.4"/><circle cx="30" cy="6" r="4.4"/></g></svg>
+        <span class="t">Javor</span><span class="l">Acer palmatum</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="sec">
+    <h3 id="seLbl">Roční doba</h3>
+    <div class="seg" role="radiogroup" aria-labelledby="seLbl">
+      <button class="chip" role="radio" data-season="spring" aria-checked="false">Jaro</button>
+      <button class="chip" role="radio" data-season="summer" aria-checked="true">Léto</button>
+      <button class="chip" role="radio" data-season="autumn" aria-checked="false">Podzim</button>
+      <button class="chip" role="radio" data-season="winter" aria-checked="false">Zima</button>
+      <button class="chip" role="radio" data-season="auto" aria-checked="false" title="Roční doby se samy střídají">Plyne</button>
+    </div>
+  </div>
+
+  <div class="sec">
+    <h3 id="muLbl">Hudba</h3>
+    <div class="seg" role="radiogroup" aria-labelledby="muLbl">
+      <button class="chip" role="radio" data-music="koto" aria-checked="true">Koto</button>
+      <button class="chip" role="radio" data-music="city" aria-checked="false">Noční město</button>
+      <button class="chip" role="radio" data-music="nature" aria-checked="false">Jen příroda</button>
+    </div>
+    <div class="soundrow">
+      <button class="chip" id="soundBtn" aria-pressed="false">Zvuk vypnutý</button>
+      <label class="vol" for="vol">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M2 6h2.5L8 3v10L4.5 10H2z"/><path d="M10.5 5.5a3.5 3.5 0 0 1 0 5M12.3 3.7a6 6 0 0 1 0 8.6" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>
+        <span class="sr">Hlasitost</span>
+        <input type="range" id="vol" min="0" max="100" value="70">
+      </label>
+    </div>
+  </div>
+
+  <button class="btn primary wide" id="newTree">Vypěstovat nový strom</button>
+</section>
+
+<div id="intro">
+  <div class="card" role="dialog" aria-modal="true" aria-labelledby="introTitle" aria-describedby="introLead">
+    <div class="title-col">
+      <div class="vt"><h2 id="introTitle">Strom v misce</h2><span class="sub">Codeweek 2026</span></div>
+      <div class="seal" aria-hidden="true"><span>盆</span><span>栽</span></div>
+    </div>
+    <div class="body-col">
+      <p class="lead" id="introLead">Pečuj o vlastní bonsaj. Strom pomalu obrůstá a ty mu nůžkami dáváš tvar podle sebe. Bez skóre a bez spěchu.</p>
+      <ol class="steps">
+        <li>
+          <svg viewBox="0 0 96 72" aria-hidden="true">
+            <rect width="96" height="72" fill="#ebe7dc"/><rect width="96" height="20" fill="#2b4a7c" opacity=".22"/>
+            <path d="M4 60 Q30 54 52 40 T88 22" stroke="#25221f" stroke-width="7.5" fill="none" stroke-linecap="round"/>
+            <path d="M4 60 Q30 54 52 40 T88 22" stroke="#6a4a36" stroke-width="5" fill="none" stroke-linecap="round"/>
+            <g stroke="#25221f" stroke-width="1.2"><circle cx="80" cy="18" r="7" fill="#2f5e35"/><circle cx="90" cy="20" r="6" fill="#2f5e35"/><circle cx="72" cy="22" r="5" fill="#2f5e35"/></g>
+            <path d="M56 22 L64 58" stroke="#c4442b" stroke-width="1.6" stroke-dasharray="3 3"/>
+            <g transform="translate(60 30) rotate(-62)"><path d="M0 -1.5 Q9 -3 18 0 L0 0Z" fill="#cfd3d6" stroke="#25221f" stroke-width="1"/><path d="M0 1.5 Q9 3 18 0 L0 0Z" fill="#cfd3d6" stroke="#25221f" stroke-width="1"/><ellipse cx="-9" cy="-5" rx="7" ry="4" fill="none" stroke="#34383d" stroke-width="2.6"/><ellipse cx="-9" cy="5" rx="7" ry="4" fill="none" stroke="#34383d" stroke-width="2.6"/></g>
+          </svg>
+          <b>Střihni větev</b><span>Táhni nůžkami přes větvičku.</span>
+        </li>
+        <li>
+          <svg viewBox="0 0 96 72" aria-hidden="true">
+            <rect width="96" height="72" fill="#ebe7dc"/><rect width="96" height="20" fill="#2b4a7c" opacity=".22"/>
+            <path d="M48 70 Q46 56 50 46" stroke="#25221f" stroke-width="6.5" fill="none" stroke-linecap="round"/><path d="M48 70 Q46 56 50 46" stroke="#6a4a36" stroke-width="4" fill="none" stroke-linecap="round"/>
+            <g fill="#2f5e35" stroke="#25221f" stroke-width="1.2"><circle cx="30" cy="42" r="9"/><circle cx="66" cy="42" r="9"/><circle cx="42" cy="36" r="11"/><circle cx="56" cy="35" r="11"/><circle cx="48" cy="44" r="9"/></g>
+            <g fill="#5f9147"><circle cx="42" cy="32" r="6"/><circle cx="56" cy="31" r="6"/><circle cx="30" cy="39" r="4.5"/><circle cx="66" cy="39" r="4.5"/></g>
+            <g stroke="#c4442b" stroke-width="1.8" fill="none" stroke-linecap="round"><circle cx="60" cy="30" r="5"/><path d="M60 20v-6M68.5 23.5l4-4M70 31h6M51.5 23.5l-4-4"/></g>
+            <g fill="#5f9147" stroke="#25221f" stroke-width=".8"><ellipse cx="22" cy="56" rx="3" ry="1.6" transform="rotate(30 22 56)"/><ellipse cx="76" cy="60" rx="3" ry="1.6" transform="rotate(-20 76 60)"/><ellipse cx="84" cy="48" rx="3" ry="1.6"/></g>
+          </svg>
+          <b>Zastřihni listí</b><span>Klikni na zelený obláček. Každý klik ho zmenší.</span>
+        </li>
+        <li>
+          <svg viewBox="0 0 96 72" aria-hidden="true">
+            <rect width="96" height="72" fill="#ebe7dc"/><rect width="96" height="20" fill="#2b4a7c" opacity=".22"/>
+            <circle cx="24" cy="26" r="10" fill="#d4512e"/>
+            <path d="M0 58 Q24 50 48 54 T96 52 V72 H0Z" fill="#6f9160" stroke="#25221f" stroke-width="1"/>
+            <g stroke="#25221f" stroke-width="1.2"><path d="M54 62 V30 h5 V62Z M78 62 V30 h5 V62Z" fill="#c8402a"/><path d="M48 22 Q68 28 89 22 L88 27 Q68 32 49 27Z" fill="#1f1b18"/><rect x="51" y="29" width="35" height="3.6" fill="#c8402a"/><rect x="50" y="38" width="37" height="3.4" fill="#c8402a"/></g>
+            <rect x="8" y="46" width="30" height="4" rx="2" fill="#f5f2ea" opacity=".9"/>
+          </svg>
+          <b>Vyber si svět</b><span>Krajinu, strom, roční dobu a hudbu změníš v nastavení vpravo dole.</span>
+        </li>
+      </ol>
+      <p class="keys">Na klávesnici zastřihne mezerník nejvíc přerostlé listí.</p>
+      <div class="actions">
+        <button class="btn primary" id="startSound">Začít s hudbou</button>
+        <button class="btn" id="startQuiet">Bez zvuku</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+"use strict";
+const TAU = Math.PI * 2;
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const lerp = (a, b, k) => a + (b - a) * k;
+const easeInOut = k => k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+const rnd = (a, b) => a + Math.random() * (b - a);
+const hexc = h => { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+const mixc = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
+const rgba = (c, a = 1) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
+const reduced = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+const motion = reduced ? .3 : 1;
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+};
+const mulberry = seed => () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+const INK = hexc("#25221f");
+
+/* ---------- Palety: roční doba × druh stromu × pozadí ---------- */
+const SEASON_RAW = {
+  spring: { paper:"#efe8e3", bokashi:"#7f9cc4", glow:"#f3cfc6", glowA:.35, sun:"#f0c4bd", sunA:.85, sunR:1, mount:"#a9b5cb", cap:.55, hillFar:"#b7c4a0", hillNear:"#98ab84", ground:"#d8ccb6", moss:"#8fae5e", snow:0 },
+  summer: { paper:"#ebe7dc", bokashi:"#2b4c84", glow:"#f0e2b8", glowA:.25, sun:"#f2e3bd", sunA:.9, sunR:.9, mount:"#6e86ab", cap:.12, hillFar:"#6f9160", hillNear:"#557a4a", ground:"#cdbf9f", moss:"#5f8a40", snow:0 },
+  autumn: { paper:"#ede1cd", bokashi:"#38466a", glow:"#eda067", glowA:.55, sun:"#d4512e", sunA:.95, sunR:1.25, mount:"#8b7e9a", cap:.25, hillFar:"#b07a3f", hillNear:"#8d5a33", ground:"#c9b08b", moss:"#8a8a45", snow:0 },
+  winter: { paper:"#e7e9ea", bokashi:"#4a5468", glow:"#dfe3ea", glowA:.2, sun:"#d6dbe2", sunA:.6, sunR:.85, mount:"#8e98ab", cap:.85, hillFar:"#c8cdd6", hillNear:"#b2b9c5", ground:"#e2e5e9", moss:"#7d8c80", snow:1 }
+};
+const CITY_SEASON = {
+  spring: { bg:{ paper:"#26163c", bokashi:"#1a0d33", glow:"#ff7fb6", glowA:.6, ground:"#1a1030" }, sunTop:"#ffe0ee", sunBot:"#ff4f9a", haze:"#ff8cbe", cityRain:0 },
+  summer: { bg:{ paper:"#1d1436", bokashi:"#0a0619", glow:"#ff6a3d", glowA:.6, ground:"#150e28" }, sunTop:"#ffd23f", sunBot:"#ff3ea5", haze:"#ff3ea5", cityRain:0 },
+  autumn: { bg:{ paper:"#21101f", bokashi:"#120612", glow:"#d9481f", glowA:.62, ground:"#180c16" }, sunTop:"#ffb347", sunBot:"#c9202a", haze:"#ff7a3c", cityRain:1 },
+  winter: { bg:{ paper:"#151b36", bokashi:"#070b1d", glow:"#5aa8ff", glowA:.45, ground:"#111834" }, sunTop:"#eef6ff", sunBot:"#7fa7ff", haze:"#96beff", cityRain:0 }
+};
+const SPF = {
+  pine: {
+    spring:{ fol1:"#5f8f45", fol2:"#9cc566", acc:"#f2b2c3", accMix:0, leaf:1, bloss:1 },
+    summer:{ fol1:"#2f5e35", fol2:"#5f9147", acc:"#2f5e35", accMix:0, leaf:1, bloss:0 },
+    autumn:{ fol1:"#3d5a2f", fol2:"#7d8f45", acc:"#c9a43e", accMix:.25, leaf:1, bloss:0 },
+    winter:{ fol1:"#2e5240", fol2:"#4c7559", acc:"#4c7559", accMix:0, leaf:1, bloss:0 } },
+  maple: {
+    spring:{ fol1:"#7e8a3a", fol2:"#b9cf62", acc:"#c0483a", accMix:.35, leaf:1, bloss:0 },
+    summer:{ fol1:"#3e7a3a", fol2:"#7aab4c", acc:"#3e7a3a", accMix:0, leaf:1, bloss:0 },
+    autumn:{ fol1:"#a3262a", fol2:"#e2512f", acc:"#f08a3a", accMix:.6, leaf:1, bloss:0 },
+    winter:{ fol1:"#6b4a3a", fol2:"#8a6a50", acc:"#8a6a50", accMix:0, leaf:0, bloss:0 } },
+};
+const SPECIES = {
+  pine:   { name:"Borovice", bark:"#5e4230", barkHi:"#93705a", tex:"plates",   padR:[7, 10],  tipR:[4.8, 6.8], circ:[7, 10],  dome:.38, ang:i => rnd(-.28, .18) - i * .1,  lenK:1,    up:.3,  apex:[2, 3] },
+  maple:  { name:"Javor",    bark:"#7a6a5e", barkHi:"#b0a294", tex:"smooth",   padR:[8, 11],  tipR:[5.5, 7.5], circ:[10, 14], dome:.55, ang:i => rnd(-.85, -.45) - i * .05, lenK:.95, up:.42, apex:[3, 4] },
+};
+const SEASONS = ["spring", "summer", "autumn", "winter"];
+const SEASON_NAME = { spring: "Jaro", summer: "Léto", autumn: "Podzim", winter: "Zima" };
+
+function makePal(seasonKey, spKey, bgKey) {
+  const o = {};
+  const put = src => { for (const f in src) { const v = src[f]; o[f] = typeof v === "string" ? hexc(v) : v; } };
+  put(SEASON_RAW[seasonKey]); put(SPF[spKey][seasonKey]);
+  const cs = CITY_SEASON[seasonKey];
+  o.sunTop = hexc(cs.sunTop); o.sunBot = hexc(cs.sunBot); o.haze = hexc(cs.haze); o.cityRain = cs.cityRain;
+  if (bgKey === "city") put(cs.bg);
+  const sp = SPECIES[spKey];
+  o.bark = mixc(hexc(sp.bark), [118, 118, 124], seasonKey === "winter" ? .15 : 0);
+  o.barkHi = hexc(sp.barkHi);
+  o.city = bgKey === "city" ? 1 : 0;
+  return o;
+}
+const mixPal = (a, b, k) => { const o = {}; for (const f in a) { const x = a[f], y = b[f]; o[f] = Array.isArray(x) ? mixc(x, y, k) : lerp(x, y, k); } return o; };
+
+let season = "summer", seasonSel = store.get("sv-season", "summer");
+let species = store.get("sv-species", "pine"), bg = store.get("sv-bg", "temple");
+if (!SPECIES[species]) species = "pine";
+if (!["temple", "city", "fuji"].includes(bg)) bg = "temple";
+let P = makePal("summer", species, bg), palFrom = P, palTo = P, palK = 1, autoT = 0;
+let bgFrom = bg, bgK = 1;
+function retarget() { palFrom = P; palTo = makePal(season, species, bg); palK = 0; }
+
+const POTS = [{ body: "#5b3a33", lip: "#4a2e29" }, { body: "#3f5f78", lip: "#324d63" }, { body: "#7a6a55", lip: "#64563f" }];
+
+/* ---------- Canvas a rozvržení ---------- */
+const cvs = document.getElementById("scene");
+const ctx = cvs.getContext("2d");
+let W = 0, H = 0, DPR = 1, S = 1;
+const L = {};
+let paperTex = null, cityFar = null, cityNear = null, citySigns = [], farB = [], nearB = [], toggles = [], cars = [], train = { x: -9999, t: 6 }, cityRainDrops = [];
+
+function layout() {
+  L.groundY = H * .86;
+  L.treeH = clamp(Math.min(H * .52, (W - 32) * .5, (L.groundY - 130) * .78), 140, 430);
+  S = L.treeH / 100;
+  L.potW = L.treeH * .78; L.potH = L.treeH * .15;
+  L.standH = L.treeH * .08; L.standW = L.potW * 1.28;
+  L.standTop = L.groundY - L.standH;
+  L.potBot = L.standTop; L.potTop = L.potBot - L.potH;
+  L.baseX = W / 2 - L.potW * .1; L.baseY = L.potTop - L.potH * .05;
+  L.mBase = L.groundY - H * .1;
+}
+function makePaper() {
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(W)); c.height = Math.max(1, Math.round(H));
+  const g = c.getContext("2d"), n = Math.round(W * H / 220);
+  for (let i = 0; i < n; i++) {
+    const x = Math.random() * W, y = Math.random() * H, l = rnd(2, 9), a = rnd(0, TAU);
+    g.strokeStyle = Math.random() < .5 ? `rgba(255,255,255,${rnd(.08, .22)})` : `rgba(90,70,40,${rnd(.03, .08)})`;
+    g.lineWidth = rnd(.4, 1);
+    g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + Math.cos(a) * l * .5 + rnd(-1, 1), y + Math.sin(a) * l * .5 + rnd(-1, 1), x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
+  }
+  const v = g.createRadialGradient(W / 2, H * .45, Math.min(W, H) * .35, W / 2, H * .5, Math.max(W, H) * .8);
+  v.addColorStop(0, "rgba(110,90,60,0)"); v.addColorStop(1, "rgba(110,90,60,.16)");
+  g.fillStyle = v; g.fillRect(0, 0, W, H);
+  paperTex = c;
+}
+
+/* Neonové Tokio: statické vrstvy se kreslí jednou do pomocných pláten */
+const SIGN_TEXT = ["東京", "夢", "ラーメン", "酒場", "電気", "茶屋", "カラオケ", "未来", "盆栽", "宇宙", "喫茶", "ネオン"];
+const NEON = ["#ff3ea5", "#29e6ff", "#ffd23f", "#9d6bff", "#5dff9a"];
+function makeCity() {
+  const mk = () => { const c = document.createElement("canvas"); c.width = Math.max(1, Math.round(W * DPR)); c.height = Math.max(1, Math.round(H * DPR)); const g = c.getContext("2d"); g.setTransform(DPR, 0, 0, DPR, 0, 0); return [c, g]; };
+  const R = mulberry(20771);
+  const r = (a, b) => a + R() * (b - a);
+  const [fc, f] = mk();
+  const base = L.groundY - H * .02;
+  farB = []; nearB = []; toggles = [];
+  let x = -10;
+  while (x < W + 10) {
+    const w = r(26, 72), h = r(.1, .38) * H;
+    farB.push([x, base - h, w]);
+    f.fillStyle = "#2a1a4e"; f.fillRect(x, base - h, w, h + 4);
+    f.strokeStyle = "#0b0618"; f.lineWidth = 1; f.strokeRect(x + .5, base - h + .5, w - 1, h + 4);
+    if (R() < .35) { f.beginPath(); f.moveTo(x + w * .5, base - h); f.lineTo(x + w * .5, base - h - r(10, 30)); f.stroke(); f.fillStyle = "#ff3ea5"; f.fillRect(x + w * .5 - 1, base - h - r(10, 30) - 1, 2, 2); }
+    f.fillStyle = "rgba(157,107,255,.35)";
+    for (let yy = base - h + 6; yy < base - 4; yy += 9) for (let xx = x + 4; xx < x + w - 4; xx += 7) if (R() < .22) f.fillRect(xx, yy, 3, 4);
+    x += w + r(-8, 3);
+  }
+  const [nc, n] = mk();
+  citySigns = [];
+  const sides = [[-10, Math.max(W * .3, 100)], [Math.min(W * .7, W - 100), W + 10]];
+  for (const [x0, x1] of sides) {
+    let xx = x0;
+    while (xx < x1) {
+      const w = r(50, 110), h = r(.28, .62) * H, top = L.groundY - h;
+      const g = n.createLinearGradient(xx, 0, xx + w, 0);
+      g.addColorStop(0, "#160d2a"); g.addColorStop(.5, "#22163d"); g.addColorStop(1, "#130b24");
+      nearB.push([xx, top, w]);
+      n.fillStyle = g; n.fillRect(xx, top, w, h);
+      n.strokeStyle = "#070410"; n.lineWidth = 1.5; n.strokeRect(xx + .75, top + .75, w - 1.5, h);
+      if (R() < .5) { n.fillStyle = "#130b24"; n.fillRect(xx + w * .2, top - 12, w * .25, 12); n.strokeRect(xx + w * .2, top - 12, w * .25, 12); }
+      for (let yy = top + 10; yy < L.groundY - 8; yy += 11) for (let wx = xx + 6; wx < xx + w - 8; wx += 9) {
+        if (R() < .3) { n.fillStyle = R() < .7 ? "rgba(255,207,107,.85)" : "rgba(127,243,255,.8)"; n.fillRect(wx, yy, 4, 5); }
+        else if (R() < .06) toggles.push({ x: wx, y: yy, on: R() < .5, c: R() < .7 ? "rgba(255,207,107,.9)" : "rgba(127,243,255,.85)", next: R() * 8 });
+      }
+      n.strokeStyle = "rgba(41,230,255,.55)"; n.lineWidth = 1.5; n.beginPath(); n.moveTo(xx + 2, top + 3); n.lineTo(xx + w - 2, top + 3); n.stroke();
+      if (R() < .75) {
+        const txt = SIGN_TEXT[(R() * SIGN_TEXT.length) | 0], sw = r(22, 30), sh = Math.min(txt.length * sw * .9 + 16, h * .6);
+        const onLeft = R() < .5;
+        citySigns.push({ x: onLeft ? xx - sw * .4 : xx + w - sw * .6, y: top + r(20, Math.max(24, h * .25)), w: sw, h: sh, text: txt, c: hexc(NEON[(R() * NEON.length) | 0]), ph: R() * 100 });
+      }
+      xx += w + r(-6, 6);
+    }
+  }
+  const R2 = mulberry(99);
+  for (let i = 0; i < 2; i++) {
+    const txt = SIGN_TEXT[(R2() * SIGN_TEXT.length) | 0];
+    citySigns.push({ x: W * (.36 + i * .2), y: L.groundY - H * (.3 + R2() * .08), w: txt.length * 18 + 18, h: 24, text: txt, c: hexc(NEON[(R2() * NEON.length) | 0]), ph: R2() * 100, horiz: true });
+  }
+  cityFar = fc; cityNear = nc;
+  const lanes = [.22, .3, .38, .46];
+  cars = Array.from({ length: 9 }, (_, i) => { const dir = i % 2 ? 1 : -1; return { y: L.groundY - H * lanes[i % 4] + rnd(-6, 6), x: rnd(0, W), v: rnd(40, 95) * dir, c: NEON[(Math.random() * NEON.length) | 0] }; });
+  cityRainDrops = Array.from({ length: 170 }, () => ({ x: Math.random(), y: Math.random(), l: rnd(10, 24), v: rnd(.9, 1.3) }));
+}
+function resize() {
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  W = cvs.clientWidth; H = cvs.clientHeight;
+  cvs.width = Math.round(W * DPR); cvs.height = Math.round(H * DPR);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  layout(); makePaper(); makeCity();
+}
+
+/* ---------- Strom ---------- */
+let segs = [], tree = { pot: 0, age: 24, cuts: 0, moss: [], rock: 1, species }, treeAlpha = 1, replacing = false, nextSpecies = null;
+let sproutT = 3;
+const upBias = (a, k) => Math.atan2(Math.sin(a) - k, Math.cos(a));
+const endOf = s => [s.x0 + Math.cos(s.a) * s.len * s.g, s.y0 + Math.sin(s.a) * s.len * s.g];
+function newPad(r) {
+  const sp = SPECIES[tree.species], n = sp.circ[0] + ((Math.random() * (sp.circ[1] - sp.circ[0] + 1)) | 0), c = [];
+  for (let k = 0; k < n; k++) {
+    const dx = ((k / (n - 1)) * 2 - 1) * r * 1.25 + rnd(-.15, .15) * r;
+    const dy = -Math.cos(dx / (r * 1.5)) * r * sp.dome + rnd(-.16, .16) * r;
+    c.push([dx, dy, r * rnd(.42, .62) * (1 - Math.abs(dx) / (r * 2.6))]);
+  }
+  c.sort((a, b) => b[1] - a[1]);
+  const mid = c[Math.floor(c.length / 2)][1];
+  const bl = Array.from({ length: 6 }, () => [rnd(-1.1, 1.1) * r, rnd(-.6, .1) * r]);
+  return { r, s: 1, t: 1, c, mid, bl, hue: Math.random(), cd: 0 };
+}
+function addSeg(p, x0, y0, a, len, w0, w1, d, g = 1) {
+  const s = { id: segs.length, p, x0, y0, a, len, w0, w1, d, kids: [], g, pad: null, stub: false, stubT: 0, dead: false, root: false };
+  segs.push(s); if (p >= 0) segs[p].kids.push(s.id);
+  return s;
+}
+function branch(p, x0, y0, a, len, w0, d, levels) {
+  const sp = SPECIES[tree.species];
+  const s = addSeg(p, x0, y0, a, len, w0, w0 * .62, d);
+  const [ex, ey] = endOf(s);
+  if (levels <= 0 || len < 6) { s.pad = newPad(rnd(sp.padR[0], sp.padR[1])); s.pad.s = s.pad.t = rnd(.95, 1.2); return; }
+  const k = levels >= 2 || Math.random() < .6 ? 2 : 1;
+  for (let j = 0; j < k; j++) {
+    const na = upBias(a + (j === 0 ? -1 : 1) * rnd(.25, .6), .12);
+    branch(s.id, ex, ey, na, len * rnd(.55, .72), s.w1, d + 1, levels - 1);
+  }
+}
+function genTree(spKey) {
+  segs = [];
+  tree = { pot: (Math.random() * POTS.length) | 0, age: 18 + ((Math.random() * 22) | 0), cuts: 0, rock: Math.random() < .5 ? -1 : 1, species: spKey,
+           moss: Array.from({ length: 46 }, () => [Math.random(), Math.random(), rnd(.6, 1.6)]) };
+  const sp = SPECIES[spKey];
+  let x = 0, y = 0, a = -Math.PI / 2 + rnd(-.22, .22), w = 11, prev = -1, bend = Math.random() < .5 ? 1 : -1;
+  const trunk = [];
+  for (let i = 0; i < 5; i++) {
+    const len = rnd(13, 17) * (1 - i * .06), w1 = w * .76;
+    a += bend * rnd(.3, .55) * (i === 0 ? .5 : 1); bend *= -1;
+    a = clamp(a, -Math.PI / 2 - .7, -Math.PI / 2 + .7);
+    const s = addSeg(prev, x, y, a, len, w, w1, 0);
+    trunk.push(s); [x, y] = endOf(s); prev = s.id; w = w1;
+  }
+  let side = Math.random() < .5 ? 1 : -1;
+  for (let i = 0; i < 4; i++) {
+    const t = trunk[i], [ex, ey] = endOf(t);
+    const lenB = rnd(20, 27) * (1.15 - i * .17) * sp.lenK, base = sp.ang(i);
+    branch(t.id, ex, ey, side > 0 ? base : Math.PI - base, lenB, t.w1 * .58, 1, i < 2 || spKey !== "pine" ? 2 : 1);
+    side *= -1;
+    if (i === 1 && Math.random() < .6) branch(t.id, ex, ey, upBias(-Math.PI / 2 + side * rnd(.5, .8), 0), rnd(9, 12), t.w1 * .45, 1, 1);
+  }
+  const top = trunk[4], [tx, ty] = endOf(top);
+  const n = sp.apex[0] + ((Math.random() * (sp.apex[1] - sp.apex[0] + 1)) | 0);
+  for (let j = 0; j < n; j++) branch(top.id, tx, ty, -Math.PI / 2 + (j - (n - 1) / 2) * rnd(.55, .85), rnd(8, 11), top.w1 * .7, 1, 1);
+  [[.06, 13], [Math.PI - .1, 11], [.32, 8], [Math.PI - .38, 7]].forEach(([ra, rl]) => { const r = addSeg(-1, 0, -1, ra, rl * rnd(.85, 1.15), rnd(5.5, 7.5), 1.2, 0); r.root = true; });
+  for (let i = 0; i < 34; i++) sprout(true);
+  sproutT = 3;
+  updateMeta();
+}
+function tips() { return segs.filter(s => !s.dead && !s.root && s.d >= 1 && s.kids.length === 0 && s.g >= 1 && s.d < 8); }
+function sproutFrom(p, instant, baseA, regrow) {
+  const sp = SPECIES[tree.species], [ex, ey] = endOf(p);
+  const want = regrow ? 1 : (Math.random() < .5 ? 2 : 1);
+  let made = 0;
+  for (let tries = 0; tries < want * 4 && made < want; tries++) {
+    const a = upBias((baseA ?? p.a) + rnd(-.75, .75), sp.up), len = regrow ? rnd(6, 10) : rnd(5, 9);
+    const nx = ex + Math.cos(a) * len, ny = ey + Math.sin(a) * len;
+    if (Math.abs(nx) > 78 || ny < -116 || ny > 3) continue;
+    const w0 = Math.max(.8, Math.min(p.w1 * .85, regrow ? 2.6 : 99));
+    const s = addSeg(p.id, ex, ey, a, len, w0, w0 * .7, p.d + 1, instant ? 1 : 0);
+    s.pad = newPad(rnd(sp.tipR[0], sp.tipR[1])); s.pad.s = s.pad.t = instant ? rnd(.75, 1.1) : regrow ? .4 : .2;
+    made++;
+  }
+  if (made) { p.stub = false; if (p.pad) p.pad.t = (p.pad.t ?? p.pad.s) * .85; }
+  return made;
+}
+function sprout(instant) {
+  const c = tips().filter(s => !s.stub && s.regrowAt === undefined);
+  if (!c.length) return;
+  sproutFrom(c[(Math.random() * c.length) | 0], instant);
+}
+/* ---------- Stříhání ---------- */
+let debris = [], parts = [], trail = [], floats = [];
+let snapT = 0, trunkMsgT = -10, firstCut = false, hoverSeg = null;
+function segInter(ax, ay, bx, by, cx, cy, dx, dy) {
+  const r1 = bx - ax, r2 = by - ay, s1 = dx - cx, s2 = dy - cy, den = r1 * s2 - r2 * s1;
+  if (Math.abs(den) < 1e-9) return -1;
+  const t = ((cx - ax) * s2 - (cy - ay) * s1) / den, u = ((cx - ax) * r2 - (cy - ay) * r1) / den;
+  return t >= 0 && t <= 1 && u >= 0 && u <= 1 ? u : -1;
+}
+function distPS(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, l = dx * dx + dy * dy, t = l ? clamp(((px - ax) * dx + (py - ay) * dy) / l, 0, 1) : 0;
+  return Math.hypot(px - (ax + dx * t), py - (ay + dy * t));
+}
+function padCenter(s) { const [ex, ey] = endOf(s), k = s.pad.s * s.g; return [ex + Math.sin(T * .6 + s.id) * .5 * motion, ey - s.pad.r * .22 * k]; }
+function collect(id, out) { out.push(id); for (const k of segs[id].kids) collect(k, out); return out; }
+function stroke(ax, ay, bx, by) {
+  if (replacing) return;
+  const ux0 = (ax - L.baseX) / S, uy0 = (ay - L.baseY) / S, ux1 = (bx - L.baseX) / S, uy1 = (by - L.baseY) / S;
+  if (Math.hypot(ux1 - ux0, uy1 - uy0) < .05) return;
+  const order = segs.filter(s => !s.dead && !s.root).sort((a, b) => b.d - a.d);
+  let cutAny = false;
+  for (const s of order) {
+    if (s.dead) continue;
+    const [ex, ey] = endOf(s), u = segInter(ux0, uy0, ux1, uy1, s.x0, s.y0, ex, ey);
+    if (u < 0) continue;
+    if (s.d === 0) { if (T - trunkMsgT > 3) { trunkMsgT = T; floats.push({ text: "Kmen se nestříhá", x: bx, y: by - 24, life: 2 }); } continue; }
+    cutSeg(s, u); cutAny = true;
+  }
+  if (cutAny) onCut();
+}
+function cutSeg(s, u) {
+  const [ex, ey] = endOf(s), keep = u < .14 ? 0 : u;
+  const cx = lerp(s.x0, ex, keep), cy = lerp(s.y0, ey, keep), wc = lerp(s.w0, s.w1, keep);
+  const ids = collect(s.id, []);
+  const piece = { segs: [], pads: [], px: cx, py: cy, dx: 0, dy: 0, vx: rnd(-14, 14), vy: rnd(-12, 0), rot: 0, vr: rnd(-2.4, 2.4), life: 6, landed: 0 };
+  for (const id of ids) {
+    const q = segs[id], [qx, qy] = endOf(q);
+    piece.segs.push(id === s.id ? [cx, cy, qx, qy, wc, q.w1] : [q.x0, q.y0, qx, qy, q.w0, q.w1]);
+    if (q.pad) { const [pcx, pcy] = padCenter(q); piece.pads.push({ x: pcx, y: pcy, pad: q.pad, k: q.pad.s * q.g }); }
+    if (id !== s.id) q.dead = true;
+  }
+  s.kids = [];
+  if (keep === 0) {
+    s.dead = true;
+    if (s.p >= 0) { const par = segs[s.p]; par.kids = par.kids.filter(k => k !== s.id); if (!par.kids.length && !par.root && par.d >= 1) { par.stub = true; par.stubT = T; } par.regrowAt = T + 25; par.regrowA = s.a; }
+  } else { s.len = s.len * s.g * keep; s.g = 1; s.w1 = wc; s.pad = null; s.stub = true; s.stubT = T; s.regrowAt = T + 25; s.regrowA = s.a; }
+  debris.push(piece);
+  const px = L.baseX + cx * S, py = L.baseY + cy * S;
+  const pc = piece.pads.length && P.leaf > .3 ? padColors(piece.pads[0].pad)[0] : P.barkHi;
+  for (let i = 0; i < 9; i++) parts.push(leafPart(px, py, i % 3 ? pc : P.barkHi, rnd(-60, 60), rnd(-80, 10)));
+  tree.cuts++;
+}
+function trimPad(s) {
+  const pad = s.pad, [cx, cy] = padCenter(s), px = L.baseX + cx * S, py = L.baseY + cy * S, [c1, c2] = padColors(pad);
+  const gone = pad.t <= .3;
+  const n = gone ? 16 : 8, spread = pad.r * pad.s * S;
+  for (let i = 0; i < n; i++) parts.push(leafPart(px + rnd(-1, 1) * spread, py + rnd(-.5, .3) * spread, i % 2 ? c1 : c2, rnd(-50, 50), rnd(-70, 0)));
+  if (gone) { s.pad = null; s.bareT = T; if (hoverSeg === s) hoverSeg = null; }
+  else pad.t = Math.max(.25, pad.t - .2);
+  tree.cuts++; onCut(true);
+}
+function padAt(px, py) {
+  if (P.leaf < .3) return null;
+  const ux = (px - L.baseX) / S, uy = (py - L.baseY) / S;
+  let best = null, bestY = Infinity;
+  for (const s of segs) {
+    if (s.dead || !s.pad) continue;
+    const [cx, cy] = padCenter(s), k = s.pad.s * s.g * P.leaf;
+    if (cy >= bestY) continue;
+    for (const c of s.pad.c) {
+      const dx = ux - (cx + c[0] * k), dy = uy - (cy + c[1] * k), r = c[2] * k + .8;
+      if (dx * dx + dy * dy < r * r) { best = s; bestY = cy; break; }
+    }
+  }
+  return best;
+}
+function onCut(soft) { snapT = .12; Snd.snip(soft); if (!firstCut) { firstCut = true; setHint(); } updateMeta(); }
+function leafPart(x, y, c, vx, vy) { return { x, y, vx, vy, r: rnd(0, TAU), vr: rnd(-5, 5), c, life: rnd(2.5, 4), kind: "leaf", sz: rnd(2.2, 3.6) }; }
+function trimBiggest() {
+  if (P.leaf < .3) return;
+  const c = segs.filter(s => !s.dead && s.pad).sort((a, b) => b.pad.t * b.pad.r - a.pad.t * a.pad.r);
+  if (c.length) trimPad(c[0]);
+}
+
+/* ---------- Zvuk: tři styly hudby ---------- */
+const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+const MIYAKO = [52, 53, 57, 59, 60, 64, 65, 69, 71, 72, 76];
+const CITY_CHORDS = [[45, 57, 60, 64, 67, 71], [41, 53, 57, 60, 64], [48, 55, 59, 64, 67], [43, 55, 59, 62, 64]];
+const Snd = {
+  ctx: null, on: false, vol: store.get("sv-vol", 70) / 100, style: store.get("sv-music", "koto"), idx: 5, chord: 0, arpI: 0,
+  init() {
+    if (this.ctx) return true;
+    const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return false;
+    const c = this.ctx = new AC();
+    this.master = c.createGain(); this.master.gain.value = 0;
+    const comp = c.createDynamicsCompressor(); comp.threshold.value = -16; comp.ratio.value = 3;
+    this.master.connect(comp); comp.connect(c.destination);
+    this.verb = c.createConvolver(); this.verb.buffer = this.impulse(4.5);
+    const vg = c.createGain(); vg.gain.value = .55; this.verb.connect(vg); vg.connect(this.master);
+    this.music = c.createGain(); this.music.gain.value = .9; this.music.connect(this.master); this.music.connect(this.verb);
+    this.noiseBuf = this.noise();
+    // dron (koto)
+    const df = c.createBiquadFilter(); df.type = "lowpass"; df.frequency.value = 420;
+    this.drone = c.createGain(); this.drone.gain.value = 0; df.connect(this.drone); this.drone.connect(this.master); this.drone.connect(this.verb);
+    [[40, 1], [47, .7], [52, .35]].forEach(([m, g]) => { const o = c.createOscillator(); o.type = "sine"; o.frequency.value = mtof(m); const og = c.createGain(); og.gain.value = g * .5; o.connect(og); og.connect(df); o.start(); });
+    // vítr
+    const ws = c.createBufferSource(); ws.buffer = this.noiseBuf; ws.loop = true;
+    this.windBP = c.createBiquadFilter(); this.windBP.type = "bandpass"; this.windBP.frequency.value = 480; this.windBP.Q.value = .6;
+    this.windG = c.createGain(); this.windG.gain.value = 0;
+    ws.connect(this.windBP); this.windBP.connect(this.windG); this.windG.connect(this.master); ws.start();
+    // hukot města
+    const hs = c.createBufferSource(); hs.buffer = this.noiseBuf; hs.loop = true;
+    const hl = c.createBiquadFilter(); hl.type = "lowpass"; hl.frequency.value = 220;
+    this.humG = c.createGain(); this.humG.gain.value = 0;
+    hs.connect(hl); hl.connect(this.humG); this.humG.connect(this.master); hs.start(0, .9);
+    // syntezátor (Noční město)
+    this.cityF = c.createBiquadFilter(); this.cityF.type = "lowpass"; this.cityF.frequency.value = 900; this.cityF.Q.value = .7;
+    this.cityF.connect(this.music);
+    this.arp = c.createGain(); this.arp.gain.value = 1; this.arp.connect(this.music);
+    const dl = c.createDelay(1); dl.delayTime.value = .32; const fb = c.createGain(); fb.gain.value = .35; const dlp = c.createBiquadFilter(); dlp.type = "lowpass"; dlp.frequency.value = 2000;
+    this.arp.connect(dl); dl.connect(dlp); dlp.connect(fb); fb.connect(dl); dlp.connect(this.music);
+    this.resetClock();
+    setInterval(() => this.tick(), 200);
+    return true;
+  },
+  resetClock() { if (!this.ctx) return; const n = this.ctx.currentTime; this.tA = n + .4; this.tB = n + 2; this.tC = n + 1.2; },
+  impulse(sec) {
+    const c = this.ctx, len = Math.floor(c.sampleRate * sec), b = c.createBuffer(2, len, c.sampleRate);
+    for (let ch = 0; ch < 2; ch++) { const d = b.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.8); }
+    return b;
+  },
+  noise() { const c = this.ctx, len = c.sampleRate * 2, b = c.createBuffer(1, len, c.sampleRate), d = b.getChannelData(0); for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1; return b; },
+  tick() {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime, st = this.style;
+    const dr = st === "koto" ? .05 : st === "nature" ? .018 : 0;
+    const wi = st === "city" ? .008 : (season === "winter" ? .07 : st === "nature" ? .045 : .025);
+    this.drone.gain.setTargetAtTime(this.on ? dr : 0, now, 1.2);
+    this.windG.gain.setTargetAtTime(this.on ? wi : 0, now, 1.5);
+    this.humG.gain.setTargetAtTime(this.on && st === "city" ? .03 : 0, now, 1.2);
+    this.windBP.frequency.setTargetAtTime(380 + Math.sin(now * .21) * 160 + Math.sin(now * .53) * 60, now, .8);
+    if (!this.on) return;
+    if (this.tA < now) this.tA = now + .2;
+    if (this.tB < now) this.tB = now + .2;
+    if (this.tC < now) this.tC = now + .2;
+    if (st === "koto") {
+      if (now + .4 > this.tA) this.tA = this.phrase(this.tA) + rnd(3, 7);
+      if (now + .4 > this.tB) { this.rin(this.tB); this.tB += rnd(32, 58); }
+    } else if (st === "city") {
+      if (now + .5 > this.tA) { this.pad(this.tA); this.tA += 8; }
+      while (now + .5 > this.tB) { this.arpNote(this.tB); this.tB += .43; }
+      if (now + .3 > this.tC) { this.crackle(this.tC); this.tC += rnd(.08, .5); }
+    } else {
+      if (now + .4 > this.tC) { this.bird(this.tC); this.tC += rnd(3, 9); }
+      if (now + .4 > this.tB) { this.rin(this.tB); this.tB += rnd(40, 70); }
+    }
+  },
+  pluck(t, midi, peak) {
+    const c = this.ctx, f = mtof(midi);
+    const o = c.createOscillator(); o.type = "triangle"; o.frequency.setValueAtTime(f * 1.012, t); o.frequency.exponentialRampToValueAtTime(f, t + .06);
+    const o2 = c.createOscillator(); o2.type = "sine"; o2.frequency.value = f * 2; const g2 = c.createGain(); g2.gain.value = .25;
+    const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.setValueAtTime(4200, t); lp.frequency.exponentialRampToValueAtTime(650, t + .45);
+    const g = c.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(peak, t + .004); g.gain.exponentialRampToValueAtTime(.0005, t + 2.8);
+    o.connect(lp); o2.connect(g2); g2.connect(lp); lp.connect(g); g.connect(this.music);
+    o.start(t); o2.start(t); o.stop(t + 3); o2.stop(t + 3);
+  },
+  phrase(t) {
+    const n = 2 + ((Math.random() * 4) | 0);
+    for (let i = 0; i < n; i++) {
+      this.idx = clamp(this.idx + Math.round(rnd(-2.4, 2.4)), 0, MIYAKO.length - 1);
+      const m = MIYAKO[this.idx];
+      if (Math.random() < .2) this.pluck(t - .07, m + 1, .03);
+      this.pluck(t, m, .085);
+      if (Math.random() < .15) this.pluck(t, m - 12, .05);
+      t += rnd(.35, .75);
+    }
+    return t;
+  },
+  rin(t) {
+    const c = this.ctx;
+    [[1, 1, 7], [2.76, .45, 5], [5.4, .22, 3.5], [8.9, .1, 2]].forEach(([r, a, d]) => {
+      const o = c.createOscillator(); o.type = "sine"; o.frequency.value = 612 * r;
+      const g = c.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(.045 * a, t + .01); g.gain.exponentialRampToValueAtTime(.0003, t + d);
+      o.connect(g); g.connect(this.music); o.start(t); o.stop(t + d + .1);
+    });
+  },
+  pad(t) {
+    const c = this.ctx, notes = CITY_CHORDS[this.chord++ % CITY_CHORDS.length];
+    this.cur = notes;
+    notes.forEach(m => {
+      const g = c.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(.016, t + 2); g.gain.setValueAtTime(.016, t + 6.5); g.gain.linearRampToValueAtTime(0, t + 10);
+      g.connect(this.cityF);
+      [-7, 7].forEach(cents => { const o = c.createOscillator(); o.type = "sawtooth"; o.frequency.value = mtof(m) * Math.pow(2, cents / 1200); o.connect(g); o.start(t); o.stop(t + 10.2); });
+    });
+    this.cityF.frequency.setTargetAtTime(700 + Math.random() * 500, t, 2);
+  },
+  arpNote(t) {
+    const c = this.ctx, notes = (this.cur || CITY_CHORDS[0]).filter(m => m >= 55), pat = [0, 1, 2, 1, 3, 2, 1, 2];
+    const m = notes[pat[this.arpI++ % pat.length] % notes.length] + 12;
+    if (Math.random() < .18) return;
+    const o = c.createOscillator(); o.type = "triangle"; o.frequency.value = mtof(m);
+    const g = c.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(.04, t + .01); g.gain.exponentialRampToValueAtTime(.0005, t + .55);
+    o.connect(g); g.connect(this.arp); o.start(t); o.stop(t + .6);
+  },
+  crackle(t) {
+    const c = this.ctx, s = c.createBufferSource(); s.buffer = this.noiseBuf;
+    const hp = c.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 1500;
+    const g = c.createGain(); g.gain.setValueAtTime(rnd(.008, .03), t); g.gain.exponentialRampToValueAtTime(.0001, t + .004);
+    s.connect(hp); hp.connect(g); g.connect(this.master); s.start(t, Math.random() * 1.5); s.stop(t + .01);
+  },
+  bird(t) {
+    const c = this.ctx, n = 2 + ((Math.random() * 5) | 0), f0 = rnd(2400, 3600);
+    for (let i = 0; i < n; i++) {
+      const tt = t + i * rnd(.11, .2), o = c.createOscillator(); o.type = "sine";
+      o.frequency.setValueAtTime(f0, tt); o.frequency.exponentialRampToValueAtTime(f0 * rnd(1.2, 1.5), tt + .05); o.frequency.exponentialRampToValueAtTime(f0 * .9, tt + .09);
+      const g = c.createGain(); g.gain.setValueAtTime(0, tt); g.gain.linearRampToValueAtTime(.022, tt + .01); g.gain.exponentialRampToValueAtTime(.0005, tt + .1);
+      o.connect(g); g.connect(this.music); o.start(tt); o.stop(tt + .12);
+    }
+  },
+  snip(soft) {
+    if (!this.on || !this.ctx) return;
+    const c = this.ctx, t = c.currentTime + .005;
+    for (const [dt, a] of [[0, 1], [.035, .55]]) {
+      const s = c.createBufferSource(); s.buffer = this.noiseBuf;
+      const hp = c.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = soft ? 2600 : 3600;
+      const g = c.createGain(); g.gain.setValueAtTime(0, t + dt); g.gain.linearRampToValueAtTime(.22 * a * (soft ? .6 : 1), t + dt + .002); g.gain.exponentialRampToValueAtTime(.0005, t + dt + .05);
+      s.connect(hp); hp.connect(g); g.connect(this.master); s.start(t + dt, Math.random()); s.stop(t + dt + .08);
+      const o = c.createOscillator(); o.frequency.value = soft ? 1800 : 2500;
+      const og = c.createGain(); og.gain.setValueAtTime(.05 * a, t + dt); og.gain.exponentialRampToValueAtTime(.0005, t + dt + .03);
+      o.connect(og); og.connect(this.master); o.start(t + dt); o.stop(t + dt + .05);
+    }
+    const r = c.createBufferSource(); r.buffer = this.noiseBuf;
+    const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 2400; bp.Q.value = 1;
+    const rg = c.createGain(); rg.gain.setValueAtTime(0, t); rg.gain.linearRampToValueAtTime(.05, t + .04); rg.gain.exponentialRampToValueAtTime(.0005, t + .35);
+    r.connect(bp); bp.connect(rg); rg.connect(this.master); r.start(t, Math.random()); r.stop(t + .4);
+  },
+  apply() { if (this.ctx) this.master.gain.setTargetAtTime(this.on ? this.vol * .9 : 0, this.ctx.currentTime, .25); },
+  setStyle(s) { this.style = s; store.set("sv-music", s); this.resetClock(); },
+  async setOn(v) {
+    if (v && !this.init()) return;
+    this.on = v;
+    if (this.ctx && this.ctx.state !== "running") { try { await this.ctx.resume(); } catch (e) {} }
+    if (v) this.resetClock();
+    this.apply();
+    soundBtn.setAttribute("aria-pressed", String(v));
+    soundBtn.textContent = v ? "Zvuk zapnutý" : "Zvuk vypnutý";
+  }
+};
+
+/* ---------- Kreslení: pozadí ---------- */
+let T = 0, wind = 0;
+function padColors(pad) { return [mixc(P.fol1, P.acc, P.accMix * pad.hue), mixc(P.fol2, P.acc, P.accMix * pad.hue * .8)]; }
+function rrect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+
+function drawSun() {
+  const sr = clamp(Math.min(W, H) * .055, 24, 58) * P.sunR, sx = W * .25, sy = L.mBase - H * .36;
+  ctx.fillStyle = rgba(P.sun, P.sunA); ctx.beginPath(); ctx.arc(sx, sy, sr, 0, TAU); ctx.fill();
+}
+function drawKasumi(bands) {
+  bands.forEach(([y, w, cx], i) => {
+    const x = W * cx + Math.sin(T * .05 + i * 2) * 18 * motion, h = clamp(H * .028, 12, 24);
+    ctx.fillStyle = rgba(mixc(P.paper, [255, 255, 255], .3), .92);
+    ctx.beginPath(); ctx.moveTo(x - w / 2 + h / 2, y); ctx.lineTo(x + w / 2 - h / 2, y); ctx.arc(x + w / 2 - h / 2, y + h / 2, h / 2, -Math.PI / 2, Math.PI / 2);
+    ctx.lineTo(x - w / 2 + h / 2, y + h); ctx.arc(x - w / 2 + h / 2, y + h / 2, h / 2, Math.PI / 2, Math.PI * 1.5); ctx.fill();
+  });
+}
+function drawHills() {
+  const hill = (base, amp, k1, k2, sd, c) => {
+    ctx.beginPath(); ctx.moveTo(0, L.groundY + 2);
+    for (let x = 0; x <= W + 10; x += 10) { const u = x / W; ctx.lineTo(x, base - amp * (.5 + .5 * Math.sin(u * TAU * k1 + sd)) - amp * .3 * Math.sin(u * TAU * k2 + sd * 2)); }
+    ctx.lineTo(W, L.groundY + 2); ctx.closePath(); ctx.fillStyle = rgba(c); ctx.fill();
+    ctx.strokeStyle = rgba(INK, .45); ctx.lineWidth = 1; ctx.stroke();
+  };
+  hill(L.groundY - H * .055, H * .045, .9, 2.3, 1.2, P.hillFar);
+  hill(L.groundY - H * .012, H * .028, 1.6, 3.7, 3.8, P.hillNear);
+}
+function drawFuji() {
+  drawSun();
+  const mx = W * .66, mw = Math.max(W * .34, 220), peak = L.mBase - Math.min(H * .34, mw * .62), tw = mw * .1;
+  ctx.beginPath(); ctx.moveTo(mx - mw, L.mBase + 2);
+  ctx.quadraticCurveTo(mx - mw * .45, L.mBase - (L.mBase - peak) * .45, mx - tw, peak);
+  ctx.lineTo(mx - tw * .3, peak + 3); ctx.lineTo(mx + tw * .2, peak - 1); ctx.lineTo(mx + tw, peak + 2);
+  ctx.quadraticCurveTo(mx + mw * .45, L.mBase - (L.mBase - peak) * .45, mx + mw, L.mBase + 2); ctx.closePath();
+  ctx.fillStyle = rgba(P.mount); ctx.fill(); ctx.strokeStyle = rgba(INK, .55); ctx.lineWidth = 1.2; ctx.stroke();
+  if (P.cap > .02) {
+    const capY = peak + (L.mBase - peak) * .55 * P.cap;
+    const xAt = (y, sd) => { const k = (y - peak) / (L.mBase - peak); return mx + sd * (tw + (mw - tw) * Math.pow(k, 1.25) * .82); };
+    ctx.beginPath(); ctx.moveTo(mx - tw, peak); ctx.lineTo(mx - tw * .3, peak + 3); ctx.lineTo(mx + tw * .2, peak - 1); ctx.lineTo(mx + tw, peak + 2); ctx.lineTo(xAt(capY, 1), capY);
+    for (let i = 1; i <= 7; i++) { const xx = lerp(xAt(capY, 1), xAt(capY, -1), i / 7); ctx.lineTo(xx + (i % 2 ? -6 : 4), capY + (i % 2 ? -(L.mBase - peak) * .07 * P.cap : (L.mBase - peak) * .03)); }
+    ctx.closePath(); ctx.fillStyle = "rgba(250,250,248,.95)"; ctx.fill(); ctx.strokeStyle = rgba(INK, .35); ctx.lineWidth = 1; ctx.stroke();
+  }
+  drawKasumi([[L.mBase - H * .045, W * .55, .18], [L.mBase - H * .14, W * .42, .62], [L.mBase - H * .23, W * .3, .2]]);
+  drawHills();
+}
+function roof(x, y, rw, bw, rt, c) {
+  ctx.beginPath();
+  ctx.moveTo(x - rw / 2, y - rt * 1.3);
+  ctx.quadraticCurveTo(x - rw * .32, y + rt * .2, x - rw * .2, y);
+  ctx.lineTo(x + rw * .2, y);
+  ctx.quadraticCurveTo(x + rw * .32, y + rt * .2, x + rw / 2, y - rt * 1.3);
+  ctx.lineTo(x + bw * .55, y - rt * 2.3); ctx.lineTo(x - bw * .55, y - rt * 2.3); ctx.closePath();
+  ctx.fillStyle = c; ctx.fill(); ctx.stroke();
+  if (P.snow > .02) {
+    ctx.save(); ctx.strokeStyle = `rgba(250,251,252,${P.snow})`; ctx.lineWidth = rt * .9; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(x - bw * .55, y - rt * 2.2); ctx.lineTo(x + bw * .55, y - rt * 2.2); ctx.stroke(); ctx.restore();
+  }
+}
+function drawPagoda(x, base, ph) {
+  const body = rgba(mixc(P.mount, P.paper, .25)), rc = rgba(mixc(P.mount, INK, .25));
+  ctx.strokeStyle = rgba(INK, .5); ctx.lineWidth = 1;
+  let yb = base;
+  for (let i = 0; i < 5; i++) {
+    const bw = ph * .2 * (1 - i * .1), bh = ph * .1, rt = ph * .022, rw = bw * 2;
+    ctx.fillStyle = body; ctx.fillRect(x - bw / 2, yb - bh, bw, bh); ctx.strokeRect(x - bw / 2, yb - bh, bw, bh);
+    ctx.fillStyle = rgba(mixc(P.mount, INK, .45)); ctx.fillRect(x - bw * .12, yb - bh * .78, bw * .24, bh * .6);
+    roof(x, yb - bh, rw, bw, rt, rc);
+    yb = yb - bh - rt * 2.3;
+  }
+  ctx.strokeStyle = rgba(mixc(P.mount, INK, .4)); ctx.lineWidth = Math.max(1.5, ph * .012);
+  ctx.beginPath(); ctx.moveTo(x, yb); ctx.lineTo(x, yb - ph * .2); ctx.stroke();
+  ctx.lineWidth = 1;
+  for (let k = 0; k < 6; k++) { const yy = yb - ph * .03 - k * ph * .022; ctx.beginPath(); ctx.moveTo(x - ph * .018, yy); ctx.lineTo(x + ph * .018, yy); ctx.stroke(); }
+  ctx.fillStyle = rgba(mixc(P.mount, INK, .4)); ctx.beginPath(); ctx.arc(x, yb - ph * .21, ph * .012, 0, TAU); ctx.fill();
+}
+function drawTorii(tx, base, th) {
+  const verm = "#c8402a", black = "#1f1b18", tw = th * .78, pw = th * .058;
+  ctx.lineWidth = 1.6; ctx.strokeStyle = rgba(INK); ctx.lineJoin = "round";
+  for (const sd of [-1, 1]) {
+    const x = tx + sd * tw / 2;
+    ctx.fillStyle = verm;
+    ctx.beginPath(); ctx.moveTo(x - pw * .62, base); ctx.lineTo(x - pw * .48, base - th * .86); ctx.lineTo(x + pw * .48, base - th * .86); ctx.lineTo(x + pw * .62, base); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = black; ctx.fillRect(x - pw * .7, base - th * .07, pw * 1.4, th * .07); ctx.strokeRect(x - pw * .7, base - th * .07, pw * 1.4, th * .07);
+    ctx.fillStyle = "rgba(255,255,255,.14)"; ctx.fillRect(x - pw * .3, base - th * .84, pw * .16, th * .76);
+  }
+  ctx.fillStyle = verm;
+  const ny = base - th * .66; ctx.fillRect(tx - tw * .64, ny, tw * 1.28, th * .045); ctx.strokeRect(tx - tw * .64, ny, tw * 1.28, th * .045);
+  const sy = base - th * .88; ctx.fillRect(tx - tw * .62, sy, tw * 1.24, th * .045); ctx.strokeRect(tx - tw * .62, sy, tw * 1.24, th * .045);
+  ctx.fillRect(tx - pw * .4, sy + th * .045, pw * .8, ny - sy - th * .045); ctx.strokeRect(tx - pw * .4, sy + th * .045, pw * .8, ny - sy - th * .045);
+  const gw = th * .12, gh = th * .14, gy = sy + th * .055;
+  ctx.fillStyle = black; ctx.fillRect(tx - gw / 2, gy, gw, gh); ctx.strokeStyle = "#c9a24a"; ctx.lineWidth = 1.2; ctx.strokeRect(tx - gw / 2 + 2, gy + 2, gw - 4, gh - 4);
+  ctx.fillStyle = "#e0bd62"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.font = `800 ${Math.max(8, gh * .34)}px 'Shippori Mincho', serif`;
+  ctx.fillText("神", tx, gy + gh * .3); ctx.fillText("社", tx, gy + gh * .7);
+  ctx.textBaseline = "alphabetic";
+  ctx.strokeStyle = rgba(INK); ctx.lineWidth = 1.6;
+  const ky = base - th * .95, kt = th * .055, kw = tw * .82;
+  ctx.fillStyle = black;
+  ctx.beginPath(); ctx.moveTo(tx - kw, ky - kt * 1.4); ctx.quadraticCurveTo(tx, ky + kt * .5, tx + kw, ky - kt * 1.4);
+  ctx.lineTo(tx + kw * .96, ky - kt * .3); ctx.quadraticCurveTo(tx, ky + kt * 1.5, tx - kw * .96, ky - kt * .3); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = verm;
+  ctx.beginPath(); ctx.moveTo(tx - kw * .93, ky - kt * .2); ctx.quadraticCurveTo(tx, ky + kt * 1.6, tx + kw * .93, ky - kt * .2);
+  ctx.lineTo(tx + kw * .9, ky + kt * .6); ctx.quadraticCurveTo(tx, ky + kt * 2.3, tx - kw * .9, ky + kt * .6); ctx.closePath(); ctx.fill(); ctx.stroke();
+  if (P.snow > .02) {
+    ctx.strokeStyle = `rgba(250,251,252,${P.snow})`; ctx.lineWidth = kt * .7; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(tx - kw * .95, ky - kt * 1.55); ctx.quadraticCurveTo(tx, ky + kt * .3, tx + kw * .95, ky - kt * 1.55); ctx.stroke(); ctx.lineCap = "butt";
+  }
+}
+function drawLantern(x, base, lh) {
+  const stone = "#9b9a92", dark = "#77766f";
+  ctx.strokeStyle = rgba(INK); ctx.lineWidth = 1.3;
+  const box = (cx, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(cx - w / 2, y, w, h); ctx.strokeRect(cx - w / 2, y, w, h); };
+  box(x, base - lh * .08, lh * .42, lh * .08, dark);
+  box(x, base - lh * .52, lh * .12, lh * .44, stone);
+  box(x, base - lh * .6, lh * .34, lh * .08, dark);
+  box(x, base - lh * .8, lh * .26, lh * .2, stone);
+  ctx.fillStyle = `rgba(255,214,140,${.35 + .2 * (1 - P.sunA)})`; ctx.fillRect(x - lh * .07, base - lh * .76, lh * .14, lh * .12);
+  ctx.fillStyle = dark; ctx.beginPath(); ctx.moveTo(x - lh * .3, base - lh * .8); ctx.quadraticCurveTo(x - lh * .2, base - lh * .86, x, base - lh * .95);
+  ctx.quadraticCurveTo(x + lh * .2, base - lh * .86, x + lh * .3, base - lh * .8); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = stone; ctx.beginPath(); ctx.arc(x, base - lh * .98, lh * .04, 0, TAU); ctx.fill(); ctx.stroke();
+  if (P.snow > .02) { ctx.fillStyle = `rgba(250,251,252,${P.snow})`; ctx.beginPath(); ctx.ellipse(x, base - lh * .86, lh * .22, lh * .04, 0, 0, TAU); ctx.fill(); }
+}
+function drawTemple() {
+  drawSun();
+  const ph = Math.min(H * .42, 330, W * .62), px = W < 700 ? W * .2 : W * .17;
+  drawPagoda(px, L.groundY - H * .06, ph);
+  drawKasumi([[L.mBase - H * .05, W * .5, .2], [L.mBase - H * .16, W * .36, .16], [L.mBase - H * .21, W * .3, .7]]);
+  drawHills();
+  const th = Math.min(H * .36, W < 700 ? W * .42 : 270), tx = W < 700 ? W * .82 : W * .84;
+  drawTorii(tx, L.groundY - H * .006, th);
+  if (W >= 700) drawLantern(px + ph * .5, L.groundY - H * .004, Math.min(th * .36, 110));
+}
+function drawCity() {
+  const sx = W * .25, sy = L.groundY - H * .42, sr = clamp(Math.min(W, H) * .13, 50, 140);
+  // reflektory
+  for (let i = 0; i < 2; i++) {
+    const ox = W * (i ? .9 : .1), oy = L.groundY, ang = -Math.PI / 2 + Math.sin(T * .27 * motion + i * 2.1) * .55, len = H * .95, spread = .07;
+    const gr = ctx.createRadialGradient(ox, oy, 0, ox, oy, len);
+    gr.addColorStop(0, rgba(P.haze, .16)); gr.addColorStop(1, rgba(P.haze, 0));
+    ctx.fillStyle = gr; ctx.beginPath(); ctx.moveTo(ox, oy);
+    ctx.lineTo(ox + Math.cos(ang - spread) * len, oy + Math.sin(ang - spread) * len); ctx.lineTo(ox + Math.cos(ang + spread) * len, oy + Math.sin(ang + spread) * len); ctx.closePath(); ctx.fill();
+  }
+  ctx.save(); ctx.beginPath(); ctx.arc(sx, sy, sr, 0, TAU); ctx.clip();
+  const g = ctx.createLinearGradient(0, sy - sr, 0, sy + sr); g.addColorStop(0, rgba(P.sunTop)); g.addColorStop(1, rgba(P.sunBot));
+  ctx.fillStyle = g;
+  const drift = (T * 6 * motion) % 12;
+  for (let y = sy - sr; y < sy + sr;) {
+    const k = (y - sy) / sr, band = k < 0 ? sr * .18 : Math.max(2, sr * (.16 - k * .1)), gap = k < 0 ? 0 : 1 + k * sr * .06;
+    ctx.fillRect(sx - sr, y + (k > 0 ? drift * k * .3 : 0), sr * 2, band); y += band + gap;
+  }
+  ctx.restore();
+  if (cityFar) ctx.drawImage(cityFar, 0, 0, W, H);
+  if (P.snow > .02) { ctx.fillStyle = `rgba(235,242,255,${.85 * P.snow})`; for (const [x, y, w] of farB) ctx.fillRect(x + 1, y - 1, w - 2, 3); }
+  ctx.fillStyle = rgba(P.haze, .13);
+  for (const [y, h] of [[L.groundY - H * .1, H * .03], [L.groundY - H * .2, H * .018]]) ctx.fillRect(0, y + Math.sin(T * .2) * 3, W, h);
+  // létající auta
+  for (const c of cars) {
+    const d = Math.sign(c.v), col = hexc(c.c);
+    const tr = ctx.createLinearGradient(c.x, 0, c.x - d * 30, 0); tr.addColorStop(0, rgba(col, .45)); tr.addColorStop(1, rgba(col, 0));
+    ctx.fillStyle = tr; ctx.fillRect(Math.min(c.x, c.x - d * 30), c.y - 1, 30, 2);
+    ctx.fillStyle = "#0c0718"; ctx.fillRect(c.x - 6, c.y - 2, 12, 4);
+    ctx.fillStyle = "rgba(255,250,225,.95)"; ctx.fillRect(c.x + d * 5 - 1, c.y - 1, 2.5, 2);
+    ctx.fillStyle = rgba(col, .95); ctx.fillRect(c.x - d * 6 - 1, c.y - 1, 2, 2);
+  }
+  // nadzemní dráha a vlak
+  const ty = L.groundY - H * .135;
+  ctx.fillStyle = "#0e0820"; ctx.fillRect(0, ty + 9, W, 4);
+  for (let x = 20; x < W; x += 70) ctx.fillRect(x, ty + 13, 4, L.groundY - ty - 13);
+  if (train.x > -9000) {
+    for (let i = 0; i < 6; i++) {
+      const x = train.x - i * 64;
+      if (x < -70 || x > W + 70) continue;
+      ctx.fillStyle = "#d9dce8"; ctx.fillRect(x, ty - 4, 60, 13);
+      ctx.fillStyle = rgba(P.haze, .95); ctx.fillRect(x, ty + 5, 60, 2);
+      ctx.fillStyle = "rgba(255,226,150,.95)"; for (let k = 0; k < 6; k++) ctx.fillRect(x + 5 + k * 9, ty - 1, 6, 4);
+      if (P.snow > .02) { ctx.fillStyle = `rgba(250,252,255,${P.snow})`; ctx.fillRect(x, ty - 6, 60, 2); }
+    }
+    ctx.fillStyle = "rgba(255,250,225,.9)"; ctx.beginPath(); ctx.arc(train.x + 60, ty + 2, 2.5, 0, TAU); ctx.fill();
+  }
+  if (cityNear) ctx.drawImage(cityNear, 0, 0, W, H);
+  for (const w of toggles) { ctx.fillStyle = w.on ? w.c : "#1b1131"; ctx.fillRect(w.x, w.y, 4, 5); }
+  if (P.snow > .02) { ctx.fillStyle = `rgba(240,246,255,${.9 * P.snow})`; for (const [x, y, w] of nearB) ctx.fillRect(x + 1, y - 2, w - 2, 4); }
+  for (const s of citySigns) {
+    const blink = Math.sin(T * .7 + s.ph * 13) > .985 ? .25 : 1, a = (.82 + .18 * Math.sin(T * (3 + s.ph % 4) + s.ph)) * blink;
+    const c = mixc(s.c, P.haze, .25);
+    ctx.fillStyle = "#0c0718"; ctx.fillRect(s.x, s.y, s.w, s.h);
+    ctx.save(); ctx.shadowColor = rgba(c, .9); ctx.shadowBlur = 12;
+    ctx.strokeStyle = rgba(c, a); ctx.lineWidth = 1.6; ctx.strokeRect(s.x + 2, s.y + 2, s.w - 4, s.h - 4);
+    ctx.fillStyle = rgba(mixc(c, [255, 255, 255], .35), a); ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    if (s.horiz) { ctx.font = `800 15px 'Shippori Mincho', sans-serif`; ctx.fillText(s.text, s.x + s.w / 2, s.y + s.h / 2 + 1); }
+    else {
+      const fs = s.w * .62; ctx.font = `800 ${fs}px 'Shippori Mincho', sans-serif`;
+      const chars = [...s.text], step = Math.min(fs * 1.15, (s.h - 12) / chars.length);
+      chars.forEach((ch, i) => ctx.fillText(ch, s.x + s.w / 2, s.y + 8 + step * (i + .5)));
+    }
+    ctx.restore();
+    if (P.snow > .02) { ctx.fillStyle = `rgba(245,248,255,${P.snow})`; ctx.fillRect(s.x - 1, s.y - 2, s.w + 2, 3); }
+  }
+  ctx.textBaseline = "alphabetic";
+}
+function drawCityRain() {
+  const a = P.city * P.cityRain;
+  if (a < .02) return;
+  ctx.strokeStyle = rgba(mixc([200, 215, 240], P.haze, .35), .4 * a); ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (const r of cityRainDrops) { const x = r.x * W, y = r.y * H; ctx.moveTo(x, y); ctx.lineTo(x - r.l * .2, y + r.l); }
+  ctx.stroke();
+  ctx.fillStyle = rgba(P.haze, .1 * a);
+  for (let i = 0; i < 5; i++) { const x = (i * 0.21 + (T * .03) % 1) % 1 * W; ctx.beginPath(); ctx.ellipse(x, L.groundY + (H - L.groundY) * .55, 40, 4, 0, 0, TAU); ctx.fill(); }
+}
+function drawPowerLines(a) {
+  ctx.strokeStyle = `rgba(7,4,15,${.85 * a})`; ctx.lineWidth = 1.3;
+  for (let i = 0; i < 3; i++) {
+    const y0 = H * (.1 + i * .035), sag = 34 + i * 10;
+    ctx.beginPath(); ctx.moveTo(-10, y0); ctx.quadraticCurveTo(W * .5, y0 + sag * 2, W + 10, y0 - 10); ctx.stroke();
+  }
+}
+function drawScenery(key, a) {
+  if (a <= .001) return;
+  ctx.save(); ctx.globalAlpha = a;
+  if (key === "temple") drawTemple(); else if (key === "city") drawCity(); else drawFuji();
+  ctx.restore();
+}
+function drawBackdrop() {
+  ctx.fillStyle = rgba(P.paper); ctx.fillRect(0, 0, W, H);
+  const g = ctx.createLinearGradient(0, 0, 0, H * .42);
+  g.addColorStop(0, rgba(P.bokashi, .95)); g.addColorStop(.35, rgba(P.bokashi, .62)); g.addColorStop(.7, rgba(P.bokashi, .18)); g.addColorStop(1, rgba(P.bokashi, 0));
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H * .42);
+  const top = L.mBase - H * .35, hg = ctx.createLinearGradient(0, top, 0, L.groundY);
+  hg.addColorStop(0, rgba(P.glow, 0)); hg.addColorStop(1, rgba(P.glow, P.glowA));
+  ctx.fillStyle = hg; ctx.fillRect(0, top, W, L.groundY - top);
+  if (bgK < 1) drawScenery(bgFrom, 1 - bgK);
+  drawScenery(bg, bgK < 1 ? bgK : 1);
+  ctx.fillStyle = rgba(P.ground); ctx.fillRect(0, L.groundY, W, H - L.groundY);
+  const city = P.city;
+  if (city > .01) {
+    ctx.save(); ctx.globalAlpha = city;
+    for (const s of citySigns) {
+      if (s.horiz) continue;
+      const gr = ctx.createLinearGradient(0, L.groundY, 0, H); gr.addColorStop(0, rgba(s.c, .3)); gr.addColorStop(1, rgba(s.c, 0));
+      ctx.fillStyle = gr; ctx.fillRect(s.x, L.groundY, s.w, H - L.groundY);
+    }
+    ctx.restore();
+  }
+  ctx.strokeStyle = city > .5 ? "rgba(41,230,255,.6)" : rgba(INK, .85); ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(0, L.groundY); ctx.lineTo(W, L.groundY); ctx.stroke();
+  ctx.strokeStyle = city > .5 ? "rgba(157,107,255,.18)" : rgba(INK, .14); ctx.lineWidth = 1; ctx.beginPath();
+  for (let i = 1; i < 4; i++) { const y = L.groundY + i * (H - L.groundY) / 4; ctx.moveTo(0, y); ctx.lineTo(W, y); }
+  ctx.stroke();
+  if (city > .01) drawPowerLines(city);
+  if (paperTex) { ctx.globalAlpha = 1 - city * .6; ctx.drawImage(paperTex, 0, 0, W, H); ctx.globalAlpha = 1; }
+}
+
+/* ---------- Kreslení: stolek, miska, strom ---------- */
+function drawStand() {
+  const x = W / 2, w = L.standW, top = L.standTop, h = L.standH, slab = h * .45;
+  ctx.fillStyle = "rgba(37,34,31,.18)"; ctx.fillRect(x - w / 2 + 6, L.groundY - 2, w, 5);
+  ctx.lineWidth = 1.5; ctx.strokeStyle = rgba(INK);
+  ctx.fillStyle = "#3d2b22";
+  for (const sd of [-1, 1]) { const lx = x + sd * w * .38 - w * .06; ctx.fillRect(lx, top + slab, w * .12, h - slab); ctx.strokeRect(lx, top + slab, w * .12, h - slab); }
+  ctx.fillStyle = "#4b352a"; ctx.fillRect(x - w / 2, top, w, slab); ctx.strokeRect(x - w / 2, top, w, slab);
+  ctx.strokeStyle = "rgba(255,230,200,.14)"; ctx.beginPath(); ctx.moveTo(x - w / 2 + 4, top + slab * .35); ctx.lineTo(x + w / 2 - 4, top + slab * .35); ctx.stroke();
+}
+function drawPotBack() {
+  const x = W / 2, w = L.potW, top = L.potTop, h = L.potH;
+  ctx.beginPath(); ctx.moveTo(x - w * .47, top + 1); ctx.lineTo(x - w * .44, top - h * .16); ctx.lineTo(x + w * .44, top - h * .16); ctx.lineTo(x + w * .47, top + 1); ctx.closePath();
+  ctx.fillStyle = "#3a2f27"; ctx.fill(); ctx.strokeStyle = rgba(INK); ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = rgba(P.moss);
+  for (const [u, v, r] of tree.moss) { const yy = top - h * .15 + v * h * .15, xx = x + (u * 2 - 1) * lerp(w * .43, w * .46, v); ctx.beginPath(); ctx.arc(xx, yy, r * S * .9, 0, TAU); ctx.fill(); }
+  if (P.snow > .02) {
+    ctx.fillStyle = `rgba(250,251,252,${.85 * P.snow})`;
+    for (const [u, v, r] of tree.moss) { if (v > .55) continue; const yy = top - h * .15 + v * h * .15, xx = x + (u * 2 - 1) * w * .44; ctx.beginPath(); ctx.arc(xx, yy, r * S * 1.3, 0, TAU); ctx.fill(); }
+  }
+  const rx = L.baseX + tree.rock * w * .26, ry = top - h * .05;
+  ctx.fillStyle = "#8a8c88"; ctx.beginPath(); ctx.moveTo(rx - 9 * S, ry); ctx.quadraticCurveTo(rx - 7 * S, ry - 6 * S, rx - 1 * S, ry - 6.5 * S);
+  ctx.quadraticCurveTo(rx + 6 * S, ry - 5 * S, rx + 8 * S, ry); ctx.closePath(); ctx.fill(); ctx.strokeStyle = rgba(INK); ctx.lineWidth = 1.3; ctx.stroke();
+}
+function drawPotFront() {
+  const st = POTS[tree.pot], x = W / 2, w = L.potW, top = L.potTop, bot = L.potBot, h = L.potH, lip = h * .22;
+  ctx.lineWidth = 1.6; ctx.strokeStyle = rgba(INK); ctx.fillStyle = st.lip;
+  for (const sd of [-1, 1]) { const fx = x + sd * w * .36 - w * .06; ctx.fillRect(fx, bot - h * .12, w * .12, h * .12); ctx.strokeRect(fx, bot - h * .12, w * .12, h * .12); }
+  const g = ctx.createLinearGradient(x - w / 2, 0, x + w / 2, 0), b = hexc(st.body);
+  g.addColorStop(0, rgba(mixc(b, [0, 0, 0], .18))); g.addColorStop(.3, rgba(mixc(b, [255, 255, 255], .1))); g.addColorStop(1, rgba(mixc(b, [0, 0, 0], .22)));
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.moveTo(x - w * .49, top + lip); ctx.lineTo(x + w * .49, top + lip); ctx.lineTo(x + w * .45, bot - h * .1); ctx.lineTo(x - w * .45, bot - h * .1); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = st.lip; ctx.fillRect(x - w * .515, top, w * 1.03, lip); ctx.strokeRect(x - w * .515, top, w * 1.03, lip);
+  ctx.strokeStyle = "rgba(255,255,255,.16)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x - w * .5, top + lip * .4); ctx.lineTo(x + w * .5, top + lip * .4); ctx.stroke();
+  ctx.strokeStyle = "rgba(255,240,220,.25)"; ctx.strokeRect(x + w * .3, top + lip + h * .2, h * .22, h * .22);
+  if (P.snow > .02) { ctx.fillStyle = `rgba(250,251,252,${.9 * P.snow})`; rrect(x - w * .515, top - 2, w * 1.03, 4, 2); ctx.fill(); }
+}
+function segPath(x0, y0, x1, y1, w0, w1, ex) {
+  const dx = x1 - x0, dy = y1 - y0, l = Math.hypot(dx, dy) || 1e-6, nx = -dy / l, ny = dx / l, a = w0 / 2 + ex, b = w1 / 2 + ex;
+  ctx.beginPath(); ctx.moveTo(x0 + nx * a, y0 + ny * a); ctx.lineTo(x1 + nx * b, y1 + ny * b); ctx.lineTo(x1 - nx * b, y1 - ny * b); ctx.lineTo(x0 - nx * a, y0 - ny * a); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.arc(x1, y1, b, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.arc(x0, y0, a, 0, TAU); ctx.fill();
+}
+function drawPad(cx, cy, pad, k) {
+  k *= P.leaf;
+  if (k < .03) return;
+  const o = 1.7 / S, [d, l] = padColors(pad);
+  ctx.fillStyle = rgba(INK);
+  ctx.beginPath(); for (const c of pad.c) { const x = cx + c[0] * k, y = cy + c[1] * k, r = c[2] * k + o; ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, TAU); } ctx.fill();
+  ctx.fillStyle = rgba(d);
+  ctx.beginPath(); for (const c of pad.c) { const x = cx + c[0] * k, y = cy + c[1] * k, r = c[2] * k; ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, TAU); } ctx.fill();
+  ctx.fillStyle = rgba(l);
+  ctx.beginPath(); for (const c of pad.c) { if (c[1] > pad.mid) continue; const x = cx + c[0] * k, y = cy + (c[1] - c[2] * .24) * k, r = c[2] * k * .66; ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, TAU); } ctx.fill();
+  ctx.strokeStyle = rgba(mixc(d, INK, .45), .7); ctx.lineWidth = .8 / S;
+  ctx.beginPath();
+  for (const c of pad.c) { if (c[1] > pad.mid) continue; const x = cx + c[0] * k, y = cy + c[1] * k, r = c[2] * k * .55; ctx.moveTo(x - r, y + r * .3); ctx.quadraticCurveTo(x, y - r * .2, x + r, y + r * .3); }
+  ctx.stroke();
+  if (P.bloss > .02 && pad.bl) {
+    for (const [bx, by] of pad.bl) {
+      const x = cx + bx * k, y = cy + by * k;
+      ctx.fillStyle = rgba(P.acc, P.bloss); ctx.beginPath(); ctx.arc(x, y, 1.25 * k, 0, TAU); ctx.fill();
+      ctx.fillStyle = `rgba(255,246,238,${P.bloss})`; ctx.beginPath(); ctx.arc(x, y, .45 * k, 0, TAU); ctx.fill();
+    }
+  }
+  if (P.snow > .02) {
+    ctx.fillStyle = `rgba(250,251,252,${.95 * P.snow})`;
+    ctx.beginPath(); for (const c of pad.c) { if (c[1] > pad.mid) continue; const x = cx + c[0] * k, y = cy + (c[1] - c[2] * .55) * k; ctx.moveTo(x + c[2] * k * .72, y); ctx.ellipse(x, y, c[2] * k * .72, c[2] * k * .3, 0, 0, TAU); } ctx.fill();
+  }
+}
+function drawTree() {
+  ctx.save(); ctx.translate(L.baseX, L.baseY); ctx.scale(S, S); ctx.globalAlpha = treeAlpha;
+  const live = segs.filter(s => !s.dead), o = 2.3 / S, tex = SPECIES[tree.species].tex;
+  const wEnd = s => s.root ? s.w1 : lerp(s.w0, s.w1, s.g);
+  ctx.fillStyle = rgba(INK);
+  for (const s of live) { const [ex, ey] = endOf(s); segPath(s.x0, s.y0, ex, ey, s.w0, wEnd(s), o); }
+  ctx.fillStyle = rgba(P.bark);
+  for (const s of live) { const [ex, ey] = endOf(s); segPath(s.x0, s.y0, ex, ey, s.w0, wEnd(s), 0); }
+  ctx.strokeStyle = rgba(P.barkHi, tex === "smooth" ? .85 : .7); ctx.lineCap = "round";
+  for (const s of live) {
+    if (s.w0 < 2.2) continue;
+    const [ex, ey] = endOf(s), dx = ex - s.x0, dy = ey - s.y0, l = Math.hypot(dx, dy) || 1, nx = -dy / l, ny = dx / l, sd = nx < 0 ? 1 : -1;
+    ctx.lineWidth = s.w0 * (tex === "smooth" ? .22 : .16); ctx.beginPath();
+    ctx.moveTo(s.x0 + nx * sd * s.w0 * .22, s.y0 + ny * sd * s.w0 * .22); ctx.lineTo(ex + nx * sd * s.w1 * .22, ey + ny * sd * s.w1 * .22); ctx.stroke();
+  }
+  if (tex === "plates") {
+    ctx.strokeStyle = rgba(INK, .35); ctx.lineWidth = .5;
+    for (const s of live) {
+      if (s.d !== 0 || s.root) continue;
+      const [ex, ey] = endOf(s);
+      for (let i = 1; i < 4; i++) { const t = i / 4, x = lerp(s.x0, ex, t), y = lerp(s.y0, ey, t), w = lerp(s.w0, s.w1, t) * .3; ctx.beginPath(); ctx.moveTo(x - w, y + .6); ctx.quadraticCurveTo(x, y - .4, x + w * .8, y + .5); ctx.stroke(); }
+    }
+  } else if (tex === "lenticel") {
+    ctx.strokeStyle = rgba(P.barkHi, .75); ctx.lineWidth = .45;
+    for (const s of live) {
+      if (s.w0 < 1.8 || s.root) continue;
+      const [ex, ey] = endOf(s), dx = ex - s.x0, dy = ey - s.y0, l = Math.hypot(dx, dy) || 1, nx = -dy / l, ny = dx / l;
+      const n = Math.max(1, Math.floor(l / 2.4));
+      for (let i = 1; i <= n; i++) { const t = i / (n + 1), x = lerp(s.x0, ex, t), y = lerp(s.y0, ey, t), w = lerp(s.w0, s.w1, t) * .28; ctx.beginPath(); ctx.moveTo(x - nx * w, y - ny * w); ctx.lineTo(x + nx * w, y + ny * w); ctx.stroke(); }
+    }
+  }
+  const bareSnow = P.snow * (1 - P.leaf);
+  if (bareSnow > .02) {
+    ctx.strokeStyle = `rgba(250,251,252,${.92 * bareSnow})`;
+    for (const s of live) {
+      if (s.w0 < 1.2 || s.root) continue;
+      const [ex, ey] = endOf(s), dx = ex - s.x0, dy = ey - s.y0, l = Math.hypot(dx, dy) || 1;
+      if (Math.abs(dy) / l > .85) continue;
+      let nx = -dy / l, ny = dx / l; if (ny > 0) { nx = -nx; ny = -ny; }
+      ctx.lineWidth = Math.max(.6, s.w0 * .32);
+      ctx.beginPath(); ctx.moveTo(s.x0 + nx * s.w0 * .45, s.y0 + ny * s.w0 * .45); ctx.lineTo(ex + nx * s.w1 * .45, ey + ny * s.w1 * .45); ctx.stroke();
+    }
+  }
+  for (const s of live) {
+    if (!s.stub || s.kids.length) continue;
+    const [ex, ey] = endOf(s), r = Math.max(.55, s.w1 * .55);
+    ctx.fillStyle = rgba(INK); ctx.beginPath(); ctx.ellipse(ex, ey, r + .84 / S, r * .75 + .84 / S, s.a, 0, TAU); ctx.fill();
+    ctx.fillStyle = "#e3c597"; ctx.beginPath(); ctx.ellipse(ex, ey, r, r * .75, s.a, 0, TAU); ctx.fill();
+  }
+  const pads = live.filter(s => s.pad).map(s => { const [cx, cy] = padCenter(s); return [cy, cx, s]; }).sort((a, b) => b[0] - a[0]);
+  for (const [cy, cx, s] of pads) {
+    drawPad(cx, cy, s.pad, s.pad.s * s.g);
+    if (s === hoverSeg && !ptr.down) {
+      const k = s.pad.s * s.g * P.leaf;
+      ctx.fillStyle = "rgba(255,255,240,.2)";
+      ctx.beginPath(); for (const c of s.pad.c) { const x = cx + c[0] * k, y = cy + c[1] * k, r = c[2] * k; ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, TAU); } ctx.fill();
+    }
+  }
+  for (const d of debris) {
+    ctx.save(); ctx.globalAlpha = treeAlpha * clamp(d.life / 1.5, 0, 1);
+    ctx.translate(d.px + d.dx, d.py + d.dy); ctx.rotate(d.rot); ctx.translate(-d.px, -d.py);
+    ctx.fillStyle = rgba(INK); for (const q of d.segs) segPath(q[0], q[1], q[2], q[3], q[4], q[5], o);
+    ctx.fillStyle = rgba(P.bark); for (const q of d.segs) segPath(q[0], q[1], q[2], q[3], q[4], q[5], 0);
+    for (const p of d.pads) drawPad(p.x, p.y, p.pad, p.k);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+function drawParts() {
+  for (const p of parts) {
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.globalAlpha = clamp(p.life, 0, 1);
+    if (p.kind === "snow") { ctx.fillStyle = "rgba(252,252,253,.95)"; ctx.beginPath(); ctx.arc(0, 0, p.sz, 0, TAU); ctx.fill(); }
+    else {
+      ctx.fillStyle = rgba(INK, .8); ctx.beginPath(); ctx.ellipse(0, 0, p.sz + .8, p.sz * .55 + .8, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = rgba(p.c); ctx.beginPath(); ctx.ellipse(0, 0, p.sz, p.sz * .55, 0, 0, TAU); ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+function drawTrail() {
+  if (trail.length < 2) return;
+  ctx.lineCap = "round";
+  const c = P.city > .5 ? "41,230,255" : "196,68,43";
+  for (let i = 1; i < trail.length; i++) {
+    const a = trail[i - 1], b = trail[i], age = T - b.t;
+    ctx.strokeStyle = `rgba(${c},${clamp(.75 - age * 2.4, 0, .75)})`; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  }
+}
+function drawScissors() {
+  if (!ptr.inside || !introDone || panelOpen) return;
+  const open = snapT > 0 ? .03 : ptr.down ? .2 : .34;
+  ctx.save(); ctx.translate(ptr.x, ptr.y); ctx.rotate(-.8); const sc = clamp(S * .5, .85, 1.35); ctx.scale(sc, sc); ctx.translate(-26, 0);
+  for (const sd of [-1, 1]) {
+    ctx.save(); ctx.rotate(sd * open / 2);
+    ctx.fillStyle = "#cfd3d6"; ctx.strokeStyle = rgba(INK); ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(-2, sd * 2.4); ctx.quadraticCurveTo(14, sd * 3.6, 27, sd * .3); ctx.lineTo(27, 0); ctx.lineTo(-2, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = "#34383d"; ctx.lineWidth = 4.2; ctx.beginPath(); ctx.ellipse(-15, sd * 8, 12, 6.5, sd * .25, 0, TAU); ctx.stroke();
+    ctx.strokeStyle = P.city > .5 ? "#e6e3f0" : rgba(INK); ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(-15, sd * 8, 14.2, 8.6, sd * .25, 0, TAU); ctx.stroke();
+    ctx.restore();
+  }
+  ctx.fillStyle = rgba(INK); ctx.beginPath(); ctx.arc(-1, 0, 2.2, 0, TAU); ctx.fill();
+  ctx.restore();
+}
+function drawFloats() {
+  ctx.textAlign = "center"; ctx.font = "600 13px 'Instrument Sans', system-ui, sans-serif";
+  for (const f of floats) {
+    const w = ctx.measureText(f.text).width + 18;
+    ctx.globalAlpha = clamp(f.life * 1.5, 0, 1); ctx.fillStyle = "rgba(245,242,234,.95)"; ctx.strokeStyle = rgba(INK); ctx.lineWidth = 1.2;
+    ctx.fillRect(f.x - w / 2, f.y - 15, w, 22); ctx.strokeRect(f.x - w / 2, f.y - 15, w, 22);
+    ctx.fillStyle = rgba(INK); ctx.fillText(f.text, f.x, f.y);
+  }
+  ctx.globalAlpha = 1;
+}
+function draw() { drawBackdrop(); drawStand(); drawPotBack(); drawTree(); drawPotFront(); drawParts(); drawCityRain(); drawTrail(); drawFloats(); drawScissors(); }
+
+/* ---------- Logika ---------- */
+let lastAge = -1;
+function update(dt) {
+  T += dt;
+  if (palK < 1) { palK = Math.min(1, palK + dt / 3.5); P = mixPal(palFrom, palTo, easeInOut(palK)); }
+  if (bgK < 1) bgK = Math.min(1, bgK + dt / 1.6);
+  if (seasonSel === "auto") { autoT += dt; if (autoT > 60) { autoT = 0; goSeason(SEASONS[(SEASONS.indexOf(season) + 1) % 4]); } }
+  wind = Math.sin(T * .3) + Math.sin(T * .83) * .5;
+  snapT -= dt;
+  hoverSeg = ptr.inside && !ptr.down && introDone && !panelOpen ? padAt(ptr.x, ptr.y) : null;
+  if (replacing) { treeAlpha -= dt * 1.8; if (treeAlpha <= 0) { genTree(nextSpecies || tree.species); debris = []; replacing = false; } }
+  else if (treeAlpha < 1) treeAlpha = Math.min(1, treeAlpha + dt * 1.5);
+  for (const s of segs) {
+    if (s.dead) continue;
+    if (s.g < 1) s.g = Math.min(1, s.g + dt / 10);
+    if (s.pad) {
+      if (s.pad.t === undefined) s.pad.t = s.pad.s;
+      if (s.pad.t < 1.35) s.pad.t = Math.min(1.35, s.pad.t + dt * .0045);
+      s.pad.s += (s.pad.t - s.pad.s) * Math.min(1, dt * 7);
+    } else if (!s.root && !s.stub && s.d >= 1 && !s.kids.length && s.bareT !== undefined && T - s.bareT > 30) {
+      const sp = SPECIES[tree.species]; s.pad = newPad(rnd(sp.tipR[0], sp.tipR[1])); s.pad.s = s.pad.t = .15; s.bareT = undefined;
+    }
+  }
+  for (const q of segs) {
+    if (q.dead || q.regrowAt === undefined || T < q.regrowAt || q.d >= 8) continue;
+    const a = q.regrowA; q.regrowAt = undefined; q.regrowA = undefined;
+    const cap = q.d === 0 ? 3 : 2;
+    if (q.kids.filter(k => !segs[k].dead).length >= cap) continue;
+    if (!sproutFrom(q, false, a, true)) { q.regrowAt = T + 10; q.regrowA = a; }
+  }
+  sproutT -= dt;
+  if (sproutT <= 0) {
+    const alive = segs.reduce((n, s) => n + (s.dead ? 0 : 1), 0);
+    sproutT = rnd(8, 13) * (alive > 240 ? 2.5 : 1) * (P.leaf < .5 ? 2 : 1);
+    if (alive < 320) sprout(false);
+  }
+  if (segs.length > 900) compact();
+  tree.age += dt / 12;
+  const ageInt = Math.floor(tree.age); if (ageInt !== lastAge) { lastAge = ageInt; updateMeta(); }
+  const gU = (L.groundY - L.baseY) / S;
+  for (let i = debris.length - 1; i >= 0; i--) {
+    const d = debris[i];
+    if (!d.landed) { d.vy += 240 * dt; d.dx += d.vx * dt; d.dy += d.vy * dt; d.rot += d.vr * dt; if (d.py + d.dy > gU - 2) { d.dy = gU - 2 - d.py; d.landed = 1; d.life = Math.min(d.life, 2.2); } }
+    d.life -= dt; if (d.life <= 0) debris.splice(i, 1);
+  }
+  const rate = { spring: 1.2, summer: 0, autumn: 1.1, winter: 26 }[season] * (palK < 1 ? 0 : 1) * (reduced ? .3 : 1);
+  if (rate > 0 && parts.length < 260) { let n = rate * dt; while (n > 0) { if (Math.random() < Math.min(1, n)) spawnAmbient(); n -= 1; } }
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i];
+    if (p.kind === "snow") { p.x += (p.vx + Math.sin(T + p.r) * 8 + wind * 6) * dt * motion; p.y += p.vy * dt * motion; }
+    else { p.vy = Math.min(p.vy + 120 * dt, 42); p.vx += (wind * 14 - p.vx) * dt * .6; p.x += (p.vx + Math.sin(T * 2.2 + p.r) * 14) * dt * motion; p.y += p.vy * dt * motion; p.r += p.vr * dt; }
+    if (p.y > L.groundY + 6) { p.y = L.groundY + 6 + (p.sz || 2); p.vx = 0; p.vy = 0; p.vr = 0; p.life = Math.min(p.life, 1.2); }
+    p.life -= dt * (p.kind === "snow" ? .15 : .25);
+    if (p.life <= 0 || p.x < -30 || p.x > W + 30) parts.splice(i, 1);
+  }
+  if (P.city > .01 || bg === "city") {
+    for (const c of cars) { c.x += c.v * dt * motion; if (c.x > W + 40) c.x = -40; if (c.x < -40) c.x = W + 40; }
+    for (const w of toggles) { w.next -= dt; if (w.next <= 0) { w.on = !w.on; w.next = rnd(3, 12); } }
+    if (train.x > -9000) { train.x += 230 * dt * motion; if (train.x - 6 * 64 > W + 20) { train.x = -9999; train.t = rnd(12, 24); } }
+    else { train.t -= dt; if (train.t <= 0) train.x = -40; }
+    if (P.cityRain > .01) for (const r of cityRainDrops) { r.y += dt * r.v * 1.2; r.x -= dt * .04; if (r.y > 1) { r.y -= 1.05; r.x = Math.random() * 1.1; } }
+  }
+  for (let i = trail.length - 1; i >= 0; i--) if (T - trail[i].t > .35) trail.splice(i, 1);
+  for (let i = floats.length - 1; i >= 0; i--) { const f = floats[i]; f.life -= dt; f.y -= dt * 14 * motion; if (f.life <= 0) floats.splice(i, 1); }
+}
+function spawnAmbient() {
+  if (season === "winter") { parts.push({ kind: "snow", x: rnd(-20, W + 20), y: -6, vx: rnd(-6, 6), vy: rnd(22, 46), r: rnd(0, TAU), sz: rnd(.9, 2.4), life: 9 }); return; }
+  if (season === "spring") { parts.push({ kind: "leaf", x: rnd(W * .2, W + 30), y: rnd(-10, H * .3), vx: rnd(-40, -15), vy: rnd(8, 20), r: rnd(0, TAU), vr: rnd(-3, 3), c: hexc("#f2b2c3"), life: 5, sz: rnd(2, 3) }); return; }
+  if (season === "autumn" && P.leaf > .3) {
+    const pads = segs.filter(s => !s.dead && s.pad);
+    if (!pads.length) return;
+    const s = pads[(Math.random() * pads.length) | 0], [cx, cy] = padCenter(s), [d, l] = padColors(s.pad);
+    parts.push(leafPart(L.baseX + (cx + rnd(-1, 1) * s.pad.r) * S, L.baseY + cy * S, Math.random() < .5 ? d : l, rnd(-10, 10), rnd(0, 10)));
+  }
+}
+function compact() {
+  const map = new Map(), keep = segs.filter(s => !s.dead);
+  keep.forEach((s, i) => map.set(s.id, i));
+  keep.forEach((s, i) => { s.id = i; s.p = map.has(s.p) ? map.get(s.p) : -1; s.kids = s.kids.filter(k => map.has(k)).map(k => map.get(k)); });
+  segs = keep;
+}
+
+/* ---------- UI ---------- */
+const hintEl = document.getElementById("hint"), cutsEl = document.getElementById("cuts");
+const seasonEl = document.getElementById("seasonName"), speciesEl = document.getElementById("speciesName");
+const soundBtn = document.getElementById("soundBtn"), volEl = document.getElementById("vol"), introEl = document.getElementById("intro");
+const gearEl = document.getElementById("gear"), panelEl = document.getElementById("panel");
+let introDone = false, panelOpen = false;
+const years = n => n === 1 ? "rok" : n >= 2 && n <= 4 ? "roky" : "let";
+function updateMeta() {
+  cutsEl.textContent = String(tree.cuts);
+  seasonEl.textContent = SEASON_NAME[season];
+  speciesEl.textContent = SPECIES[tree.species].name;
+}
+let hintTimer = 0;
+function setHint() {
+  hintEl.classList.remove("dim");
+  hintEl.textContent = firstCut ? "Každé kliknutí obláček zmenší, malý obláček kliknutím úplně odstraníš. Strom pomalu dorůstá." : "Tahem přes větvičku ji odstřihneš, kliknutím na obláček listí ho zastřihneš.";
+  clearTimeout(hintTimer);
+  if (firstCut) hintTimer = setTimeout(() => hintEl.classList.add("dim"), 9000);
+}
+function goSeason(name) { season = name; retarget(); updateMeta(); }
+function checkRadio(attr, val) { document.querySelectorAll(`[data-${attr}]`).forEach(b => b.setAttribute("aria-checked", String(b.dataset[attr] === val))); }
+function setSeason(sel, instant) {
+  seasonSel = sel; store.set("sv-season", sel); checkRadio("season", sel);
+  if (sel === "auto") autoT = 0; else goSeason(sel);
+  if (instant) { P = palTo; palK = 1; }
+}
+function setBg(key, instant) {
+  if (key !== bg) { bgFrom = bg; bg = key; bgK = instant ? 1 : 0; }
+  store.set("sv-bg", key); checkRadio("bg", key); retarget();
+  if (instant) { P = palTo; palK = 1; }
+}
+function setSpecies(key) {
+  species = key; store.set("sv-species", key); checkRadio("species", key);
+  if (key !== tree.species) { nextSpecies = key; replacing = true; }
+  palFrom = P; palTo = makePal(season, key, bg); palK = 0;
+}
+function openPanel(v) {
+  panelOpen = v; panelEl.hidden = !v; gearEl.setAttribute("aria-expanded", String(v));
+  document.body.classList.toggle("panel-open", v); ptr.down = false;
+  if (v) { const f = panelEl.querySelector('[aria-checked="true"]'); (f || panelEl).focus({ preventScroll: true }); }
+  else gearEl.focus({ preventScroll: true });
+}
+gearEl.addEventListener("click", () => openPanel(!panelOpen));
+document.getElementById("closePanel").addEventListener("click", () => openPanel(false));
+document.querySelectorAll("[data-season]").forEach(b => b.addEventListener("click", () => setSeason(b.dataset.season)));
+document.querySelectorAll("[data-bg]").forEach(b => b.addEventListener("click", () => setBg(b.dataset.bg)));
+document.querySelectorAll("[data-species]").forEach(b => b.addEventListener("click", () => setSpecies(b.dataset.species)));
+document.querySelectorAll("[data-music]").forEach(b => b.addEventListener("click", () => {
+  Snd.setStyle(b.dataset.music); checkRadio("music", b.dataset.music);
+  if (!Snd.on) Snd.setOn(true);
+}));
+soundBtn.addEventListener("click", () => Snd.setOn(!Snd.on));
+volEl.value = String(Math.round(Snd.vol * 100));
+volEl.addEventListener("input", () => { Snd.vol = volEl.value / 100; store.set("sv-vol", +volEl.value); Snd.apply(); if (!Snd.on && Snd.vol > 0) Snd.setOn(true); });
+document.getElementById("newTree").addEventListener("click", () => { if (!replacing) { nextSpecies = species; replacing = true; } });
+function closeIntro(withSound) {
+  introDone = true; introEl.classList.add("out");
+  setTimeout(() => { introEl.hidden = true; }, 650);
+  if (withSound) Snd.setOn(true);
+  cvs.focus({ preventScroll: true });
+}
+document.getElementById("startSound").addEventListener("click", () => closeIntro(true));
+document.getElementById("startQuiet").addEventListener("click", () => closeIntro(false));
+
+const ptr = { x: -999, y: -999, inside: false, down: false, lx: 0, ly: 0, sx: 0, sy: 0, moved: false };
+cvs.tabIndex = 0;
+cvs.addEventListener("pointermove", e => {
+  ptr.x = e.clientX; ptr.y = e.clientY; ptr.inside = true;
+  if (ptr.down) {
+    if (!ptr.moved && Math.hypot(ptr.x - ptr.sx, ptr.y - ptr.sy) < 7) return;
+    ptr.moved = true;
+    stroke(ptr.lx, ptr.ly, ptr.x, ptr.y); trail.push({ x: ptr.x, y: ptr.y, t: T }); ptr.lx = ptr.x; ptr.ly = ptr.y;
+  }
+});
+cvs.addEventListener("pointerdown", e => {
+  if (panelOpen) { openPanel(false); return; }
+  ptr.x = ptr.lx = ptr.sx = e.clientX; ptr.y = ptr.ly = ptr.sy = e.clientY; ptr.inside = true; ptr.down = true; ptr.moved = false;
+  trail.push({ x: ptr.x, y: ptr.y, t: T });
+  try { cvs.setPointerCapture(e.pointerId); } catch (err) {}
+  if (Snd.ctx && Snd.ctx.state !== "running") Snd.ctx.resume();
+});
+const release = e => { ptr.down = false; if (e.pointerType !== "mouse") ptr.inside = false; };
+cvs.addEventListener("pointerup", e => {
+  if (ptr.down && !ptr.moved && !replacing) { const s = padAt(e.clientX, e.clientY); if (s) trimPad(s); }
+  release(e);
+});
+cvs.addEventListener("pointercancel", release);
+cvs.addEventListener("pointerleave", () => { if (!ptr.down) ptr.inside = false; });
+window.addEventListener("keydown", e => {
+  if (e.key === "Escape" && panelOpen) { openPanel(false); return; }
+  if (!introDone || panelOpen) return;
+  if ((e.key === " " || e.key === "Enter") && (document.activeElement === cvs || document.activeElement === document.body)) { e.preventDefault(); trimBiggest(); }
+});
+window.addEventListener("resize", resize);
+
+window.claude?.hot?.snapshot?.(() => ({ segs, tree, season: seasonSel, bg, species, introDone, firstCut }));
+
+let last = 0;
+function frame(now) {
+  const dt = last ? Math.min(.05, (now - last) / 1000) : .016; last = now;
+  update(dt); draw();
+  requestAnimationFrame(frame);
+}
+function start(data) {
+  data = data || {};
+  if (data.bg) bg = data.bg;
+  if (data.species && SPECIES[data.species]) species = data.species;
+  resize();
+  if (Array.isArray(data.segs) && data.segs.length && data.tree && SPECIES[data.tree.species]) {
+    segs = data.segs; tree = data.tree; firstCut = !!data.firstCut;
+    if (data.introDone) { introDone = true; introEl.hidden = true; }
+  } else genTree(species);
+  checkRadio("species", species); checkRadio("music", Snd.style);
+  setBg(bg, true);
+  const s = data.season || seasonSel;
+  const ok = ["spring", "summer", "autumn", "winter", "auto"].includes(s) ? s : "summer";
+  if (ok === "auto") { season = "summer"; }
+  setSeason(ok, true);
+  setHint(); updateMeta();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => makeCity());
+  requestAnimationFrame(frame);
+}
+window.claude?.hot?.ready ? window.claude.hot.ready(start) : start(window.claude?.hot?.data ?? {});
+})();
+</script>
+</body>
+</html>
